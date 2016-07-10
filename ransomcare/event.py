@@ -79,13 +79,21 @@ class EventCryptoRansom(Event):
         self.path = path
 
 
-class EventUserAllowExe(Event):
-    def __init__(self, exe):
+class EventAskUserAllowOrDeny(Event):
+    def __init__(self, process, path):
+        self.process = process
+        self.path = path
+
+
+class EventUserAllowProcess(Event):
+    def __init__(self, pid, exe):
+        self.pid = pid
         self.exe = exe
 
 
-class EventUserDenyExe(Event):
-    def __init__(self, exe):
+class EventUserDenyProcess(Event):
+    def __init__(self, pid, exe):
+        self.pid = pid
         self.exe = exe
 
 

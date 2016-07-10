@@ -37,13 +37,13 @@ def main():
     event.register_event_handler(
         event.EventCryptoRansom, white_list_handler.on_crypto_ransom)
     event.register_event_handler(
-        event.EventUserAllowExe, white_list_handler.on_user_allow_exe)
+        event.EventUserAllowProcess, white_list_handler.on_user_allow_process)
     event.register_event_handler(
-        event.EventUserDenyExe, white_list_handler.on_user_deny_exe)
+        event.EventUserDenyProcess, white_list_handler.on_user_deny_process)
 
     console_ui = user_interfaces.ConsoleUI()
     event.register_event_handler(
-        event.EventCryptoRansom, console_ui.on_crypto_ransom)
+        event.EventAskUserAllowOrDeny, console_ui.on_ask_user_allow_or_deny)
 
     brain = engine.Engine()
     event.register_event_handler(

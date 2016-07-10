@@ -1,7 +1,7 @@
 #!/bin/bash
 
 filter=0
-pname=.; pid=0; exclude_pid=0; dir=/Users/huanghenry/git
+pname=.; pid=0; exclude_pid=0; dir=/Users
 opt_name=0; opt_pid=0; opt_exclude_pid=0; opt_verbose=0; opt_sys=0
 
 while getopts n:p:x:dsv name

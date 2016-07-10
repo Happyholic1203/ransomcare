@@ -12,43 +12,40 @@ logger = logging.getLogger(__name__)
 
 
 class UI(object):
-    def on_crypto_ransom(self, evt):
+    def on_ask_user_allow_or_deny(self, evt):
         raise NotImplementedError()
 
 
 class ConsoleUI(UI):
-    def on_crypto_ransom(self, evt):
-        exe = None
-        p = None
+    def on_ask_user_allow_or_deny(self, evt):
         try:
-            p = psutil.Process(evt.pid)
-            exe = p.exe()
+            exe = evt.process.exe()
+            cmdline = evt.process.cmdline()
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             logger.warn('Ransomware process is caught, but the process does '
                          'not exist (PID: %d)' % evt.pid)
-            return
 
         logger.critical('\033[91m')
         logger.critical('*** [Crypto ransom detected] ***')
-        logger.critical('[PID]: %d' % evt.pid)
+        logger.critical('[PID]: %d' % evt.process.pid)
         logger.critical('[EXE]: %r' % exe)
-        logger.critical('[Command]: %r' % p.cmdline())
+        logger.critical('[Command]: %r' % cmdline)
         logger.critical('[File]: %s' % evt.path)
         logger.critical('********************************\033[0m')
         yes_no = raw_input('> Block it? (Y/n) ')
 
         allow = 'n' in yes_no.lower()
         if allow:
-            event.dispatch(event.EventUserAllowExe(exe))
+            event.dispatch(event.EventUserAllowProcess(evt.process.pid, exe))
         else:
-            event.dispatch(event.EventUserDenyExe(exe))
+            event.dispatch(event.EventUserDenyProcess(evt.process.pid, exe))
 
 
 class WebUI(UI):
-    def on_crypto_ransom(self, evt):
+    def on_ask_user_allow_or_deny(self, evt):
         pass
 
 
 class DarwinAppUI(UI):
-    def on_crypto_ransom(self, evt):
+    def on_ask_user_allow_or_deny(self, evt):
         pass
