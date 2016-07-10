@@ -86,15 +86,13 @@ class EventAskUserAllowOrDeny(Event):
 
 
 class EventUserAllowProcess(Event):
-    def __init__(self, pid, exe):
-        self.pid = pid
-        self.exe = exe
+    def __init__(self, process):
+        self.process = process
 
 
 class EventUserDenyProcess(Event):
-    def __init__(self, pid, exe):
-        self.pid = pid
-        self.exe = exe
+    def __init__(self, process):
+        self.process = process
 
 
 # ----------------

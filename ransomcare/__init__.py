@@ -32,7 +32,6 @@ def main():
         raise NotImplementedError('Ransomcare is not ready for %s, '
                                   'please help porting it!' % system)
 
-    # only allows white-listed programs
     white_list_handler = handlers.WhiteListHandler()
     event.register_event_handler(
         event.EventCryptoRansom, white_list_handler.on_crypto_ransom)

@@ -36,9 +36,9 @@ class ConsoleUI(UI):
 
         allow = 'n' in yes_no.lower()
         if allow:
-            event.dispatch(event.EventUserAllowProcess(evt.process.pid, exe))
+            event.dispatch(event.EventUserAllowProcess(evt.process))
         else:
-            event.dispatch(event.EventUserDenyProcess(evt.process.pid, exe))
+            event.dispatch(event.EventUserDenyProcess(evt.process))
 
 
 class WebUI(UI):

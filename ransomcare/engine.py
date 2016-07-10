@@ -5,6 +5,7 @@ from __future__ import print_function
 
 import os
 import logging
+import json
 
 from . import event
 
@@ -50,6 +51,9 @@ class Engine(object):
         if not profile:
             return
 
+        if os.path.isdir(evt.path):
+            return
+
         for d in profile['listdirs']:
             parent_dir = os.path.abspath(os.path.join(evt.path, '..'))
             if parent_dir == d:
@@ -60,11 +64,15 @@ class Engine(object):
                         size = os.stat(evt.path).st_size
                     except Exception:
                         size = -1  # file does not exist or is unlinked
-                    profile['files'][evt.path] = {
-                        'size': size,
-                        'read': 0,
-                        'write': 0
-                    }
+
+                    # ignore empty files, otherwise they'll be reported
+                    # immediately
+                    if size != 0:
+                        profile['files'][evt.path] = {
+                            'size': size,
+                            'read': 0,
+                            'write': 0
+                        }
                 break
 
     def on_list_dir(self, evt):
@@ -121,6 +129,8 @@ class Engine(object):
         if file_profile['read'] >= file_profile['size']:
             self.on_crypto_ransom(evt.pid, evt.path)
 
+        self.pid_profiles[evt.pid]['files'].pop(evt.path)
+
     def on_file_close(self, evt):
         logger.debug('close: %d (%s) -> %s' % (
             evt.pid, evt.timestamp, evt.path))
@@ -132,8 +142,12 @@ class Engine(object):
         if file_profile['write'] >= file_profile['size']:
             self.on_crypto_ransom(evt.pid, evt.path)
 
-    @staticmethod
-    def on_crypto_ransom(pid, path):
+        self.pid_profiles[evt.pid]['files'].pop(evt.path)
+
+    def on_crypto_ransom(self, pid, path):
+        logger.debug('Crypto ransom event detected')
+        logger.debug('PID profiles: \n%s' %
+                     json.dumps(self.pid_profiles, indent=4))
         event.dispatch(event.EventCryptoRansom(pid, path))
 
     def _get_file_profile(self, pid, path):

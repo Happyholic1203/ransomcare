@@ -64,7 +64,12 @@ class DTraceSniffer(object):
             stdout=subprocess.PIPE, stderr=DEVNULL)
 
         while not self.stop:
-            event_raw = json.loads(self.sniffer.stdout.readline())
+            try:
+                line = self.sniffer.stdout.readline()
+                event_raw = json.loads(line)
+            except ValueError:
+                logger.warn('Failed to JSON-decode: "%r"' % line)
+                continue
             action = event_raw.get('action')
             pid = event_raw.get('pid')
             path = get_absolute_path(event_raw)  # returns None if file closed
