@@ -1,10 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import re
 import os
 import subprocess
-import shlex
 import json
 import logging
 
@@ -13,39 +11,32 @@ import psutil
 from . import event
 
 logger = logging.getLogger(__name__)
+pid_cwd = {}
 
-
-def get_path_from_fd(process, fd):
-    try:
-        files = process.open_files()
-    except psutil.NoSuchProcess:
-        return None
-
-    for f in files:
-        if f.fd == fd:
-            return f.path
-    return None
 
 def get_absolute_path(event_raw):
+    '''
+    Keeps a cache of processes' cwds, in case that their events might come
+    after they're terminated.
+    '''
     pid = event_raw.get('pid')
     fd = event_raw.get('fd')
     path = event_raw.get('path')
     if path and path[0] == '/':
         return path
 
+    cwd = None
+    logger.debug('%r' % pid_cwd)
     try:
         process = psutil.Process(pid)
+        cwd = process.cwd()
+        pid_cwd[pid] = cwd  # cache every pid's cwd
     except psutil.NoSuchProcess:
-        return None
+        cwd = pid_cwd.get(pid)
+        if not cwd:
+            return None
 
-    path = get_path_from_fd(process, fd)
-    if not path:
-        return None
-
-    if path[0] == '/':
-        return path
-
-    return os.path.abspath(os.path.join(process.cwd(), path))
+    return os.path.abspath(os.path.join(cwd, path))
 
 
 class DTraceSniffer(object):
@@ -68,8 +59,8 @@ class DTraceSniffer(object):
     def start(self):
         DEVNULL = open(os.devnull, 'wb')
         logger.debug('Excluding self: %d' % os.getpid())
-        self.sniffer = subprocess.Popen([
-            './ransomcare/sniffer', '-x', str(os.getpid())],
+        self.sniffer = subprocess.Popen(
+            ['./ransomcare/sniffer', '-x', str(os.getpid()), '-n', 'Python'],
             stdout=subprocess.PIPE, stderr=DEVNULL)
 
         while not self.stop:
@@ -88,7 +79,8 @@ class DTraceSniffer(object):
             elif action == 'read':
                 event.dispatch(event.EventFileRead(timestamp, pid, path, size))
             elif action == 'write':
-                event.dispatch(event.EventFileWrite(timestamp, pid, path, size))
+                event.dispatch(
+                    event.EventFileWrite(timestamp, pid, path, size))
             elif action == 'close':
                 event.dispatch(event.EventFileClose(timestamp, pid, path))
             elif action == 'unlink':

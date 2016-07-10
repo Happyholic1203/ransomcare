@@ -1,20 +1,22 @@
 #!/bin/bash
 
 filter=0
-pname=.; pid=0; exclude_pid=0; dir=/Users
-opt_name=0; opt_pid=0; opt_exclude_pid=0; opt_verbose=0
+pname=.; pid=0; exclude_pid=0; dir=/Users/huanghenry/git
+opt_name=0; opt_pid=0; opt_exclude_pid=0; opt_verbose=0; opt_sys=0
 
-while getopts n:p:x:dv name
+while getopts n:p:x:dsv name
 do
     case $name in
         n) opt_name=1; pname=$OPTARG;;
         p) opt_pid=1; pid=$OPTARG;;
         x) opt_exclude_pid=1; exclude_pid=$OPTARG;;
         d) [[ $OPTARG = /* ]] && dir=$OPTARG || dir=$PWD/${OPTARG#./};;
+        s) opt_sys=1;;
         v) opt_verbose=1;;
         h|?) cat <<EOF >&2
 USAGE: $0 [-p PID] [-n name]
         -v         # verbose
+        -s         # include system processes (default: off)
         -d DIR     # sniffer events under this dir only
         -p PID     # this PID only
         -x PID     # exclude this PID
@@ -39,6 +41,7 @@ dtrace='
 inline int OPT_pid          = '$opt_pid';
 inline int OPT_name         = '$opt_name';
 inline int OPT_exclude_pid  = '$opt_exclude_pid';
+inline int OPT_include_sys  = '$opt_sys';
 
 inline int FILTER           = '$filter';
 inline int PID              = '$pid';
@@ -52,7 +55,6 @@ syscall::*read_nocancel:entry,
 syscall::*write_nocancel:entry,
 syscall::close_nocancel:entry,
 syscall::getdirentries*:entry,
-syscall::*open:entry,
 syscall::*read:entry,
 syscall::*write:entry,
 syscall::close:entry,
@@ -64,25 +66,54 @@ syscall::unlink:entry
     (OPT_name == 1 && NAME == strstr(execname, NAME)) ? self->ok = 1 : 1;
     (OPT_pid == 1 && PID == pid) ? self->ok = 1 : 1;
     (OPT_exclude_pid == 1 && EXCLUDE_PID == pid) ? self->ok = 0 : 1;
+    (OPT_include_sys && PID <= 1024) ? self->ok = 0 : 1;
 }
 
 syscall::open*:entry
 /self->ok/
 {
     self->path = copyinstr(arg0);
+
+    /* Extension checking
+    this->idx = rindex(self->path, ".");
+    self->ext = (this->idx >= 0) ? substr(self->path, this->idx) : "";
+    strlen(self->ext) > 0 ? self->ext = substr(self->ext, 1) : "";
+
+    (self->ext == "png") ? (self->ok = 1) : (self->ok = 0);
+    */
 }
 
 syscall::open*:return
 /self->ok &&
+ arg1 > 2 &&
+ self->path != "" &&
  (substr(self->path, 0, 1) != "/" || substr(self->path, 0, DIR_LEN) == DIR)/
 {
-    printf("{\"action\": \"open\", \"pid\": %d, \"path\": \"%s\", \"fd\": %d, \"t\": \"%-20Y\"}\n",
-            pid, self->path, arg1, walltimestamp);
+    /* Check if path is our watched dir */
+    /*
+    (self->path != "" &&
+        (substr(self->path, 0, 1) != "/" ||
+        substr(self->path, 0, DIR_LEN) == DIR)
+    ) ? printf("{\"action\": \"open\", \"pid\": %d, \"path\": \"%s\", \"fd\": %d, \"t\": \"%-20Y\"}\n", pid, self->path, arg1, walltimestamp) : printf("");
+    */
+
+    printf("{\"action\": \"open\", \"pid\": %d, \"path\": \"%s\", \"fd\": %d, \"t\": \"%-20Y\"}\n", pid, self->path, arg1, walltimestamp);
+
     /* Apple crippled dtrace so that fi_pathname shows "??/..."
-    self->fd_path[arg1] = substr(self->path, 0, 1) == "." ? stringof(fds[arg1].fi_pathname) : self->path;
+    self->fd_path[arg1] = substr(self->path, 0, 1) == "/" ? self->path : stringof(fds[arg1].fi_pathname);
     */
     self->fd_path[arg1] = self->path;
+
     self->path = 0;
+}
+
+syscall::unlink:entry
+/self->ok &&
+ self->fd_path[arg0] != "" &&
+ (substr(self->fd_path[arg0], 0, 1) != "/" || substr(self->fd_path[arg0], 0, DIR_LEN) == DIR)/
+{
+    printf("{\"action\": \"unlink\", \"pid\": %d, \"path\": \"%s\", \"t\": \"%-20Y\"}\n",
+            pid, copyinstr(arg0), walltimestamp);
 }
 
 syscall::getdirentries*:entry
@@ -122,13 +153,6 @@ syscall::close*:entry
 {
     printf("{\"action\": \"close\", \"pid\": %d, \"fd\": %d, \"path\": \"%s\", \"t\": \"%-20Y\"}\n",
             pid, arg0, self->fd_path[arg0], walltimestamp);
-}
-
-syscall::unlink:entry
-/self->ok/
-{
-    printf("{\"action\": \"unlink\", \"pid\": %d, \"path\": \"%s\", \"t\": \"%-20Y\"}\n",
-            pid, copyinstr(arg0), walltimestamp);
 }
 '
 

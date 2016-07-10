@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import logging
+import psutil
 
 logger = logging.getLogger(__name__)
 
@@ -10,6 +11,17 @@ class Event(object):
     @classmethod
     def get_id(cls):
         return id(cls)
+
+    def get_process(self):
+        try:
+            return psutil.Process(self.pid)
+        except Exception:
+            return None
+
+
+# -----------------
+# -  File events  -
+# -----------------
 
 
 class EventFileOpen(Event):
@@ -56,11 +68,30 @@ class EventFileClose(Event):
         self.path = path
 
 
+# -----------------
+# -  User events  -
+# -----------------
+
+
 class EventCryptoRansom(Event):
-    def __init__(self, pid, cmdline, program=None):
+    def __init__(self, pid, path):
         self.pid = pid
-        self.cmdline = cmdline
-        self.program = program or '** Removed **'
+        self.path = path
+
+
+class EventUserAllowExe(Event):
+    def __init__(self, exe):
+        self.exe = exe
+
+
+class EventUserDenyExe(Event):
+    def __init__(self, exe):
+        self.exe = exe
+
+
+# ----------------
+# -  Exceptions  -
+# ----------------
 
 
 class EventNotFound(Exception):

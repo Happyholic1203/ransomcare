@@ -17,36 +17,46 @@ logger.addHandler(stream_handler)
 
 import platform
 
-from . import notifiers
+from . import user_interfaces
+from . import handlers
 from . import sniffers
 from . import event
 from . import engine
 
 
 def main():
-    _platform = platform.platform().lower()
-    if _platform.startswith('darwin'):
-        _sniffer = sniffers.DTraceSniffer()
+    system = platform.platform().lower()
+    if system.startswith('darwin'):
+        sniffer = sniffers.DTraceSniffer()
     else:
         raise NotImplementedError('Ransomcare is not ready for %s, '
-                                  'please help porting it!' % _platform)
+                                  'please help porting it!' % system)
 
-    _log_notifier = notifiers.LogNotifier()
+    # only allows white-listed programs
+    white_list_handler = handlers.WhiteListHandler()
     event.register_event_handler(
-        event.EventCryptoRansom, _log_notifier.on_crypto_ransom)
+        event.EventCryptoRansom, white_list_handler.on_crypto_ransom)
+    event.register_event_handler(
+        event.EventUserAllowExe, white_list_handler.on_user_allow_exe)
+    event.register_event_handler(
+        event.EventUserDenyExe, white_list_handler.on_user_deny_exe)
 
-    _engine = engine.Engine()
+    console_ui = user_interfaces.ConsoleUI()
     event.register_event_handler(
-        event.EventFileOpen, _engine.on_file_open)
-    event.register_event_handler(
-        event.EventListDir, _engine.on_list_dir)
-    event.register_event_handler(
-        event.EventFileRead, _engine.on_file_read)
-    event.register_event_handler(
-        event.EventFileWrite, _engine.on_file_write)
-    event.register_event_handler(
-        event.EventFileUnlink, _engine.on_file_unlink)
-    event.register_event_handler(
-        event.EventFileClose, _engine.on_file_close)
+        event.EventCryptoRansom, console_ui.on_crypto_ransom)
 
-    _sniffer.start()
+    brain = engine.Engine()
+    event.register_event_handler(
+        event.EventFileOpen, brain.on_file_open)
+    event.register_event_handler(
+        event.EventListDir, brain.on_list_dir)
+    event.register_event_handler(
+        event.EventFileRead, brain.on_file_read)
+    event.register_event_handler(
+        event.EventFileWrite, brain.on_file_write)
+    event.register_event_handler(
+        event.EventFileUnlink, brain.on_file_unlink)
+    event.register_event_handler(
+        event.EventFileClose, brain.on_file_close)
+
+    sniffer.start()
