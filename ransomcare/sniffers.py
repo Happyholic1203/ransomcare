@@ -23,7 +23,7 @@ def get_absolute_path(event_raw):
     fd = event_raw.get('fd')
     path = event_raw.get('path')
     if path and path[0] == '/':
-        return path
+        return os.path.realpath(path)
 
     cwd = None
     logger.debug('%r' % pid_cwd)
@@ -36,7 +36,7 @@ def get_absolute_path(event_raw):
         if not cwd:
             return None
 
-    return os.path.abspath(os.path.join(cwd, path))
+    return os.path.realpath(os.path.join(cwd, path))
 
 
 class DTraceSniffer(object):
