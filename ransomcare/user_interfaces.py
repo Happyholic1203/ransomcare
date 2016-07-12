@@ -3,6 +3,7 @@
 
 from __future__ import print_function
 
+import sys
 import logging
 import psutil
 
@@ -14,6 +15,16 @@ logger = logging.getLogger(__name__)
 class UI(object):
     def on_ask_user_allow_or_deny(self, evt):
         raise NotImplementedError()
+
+
+def flush_stdin():
+    try:
+        import termios  # linux
+        termios.tcflush(sys.stdin, termios.TCIOFLUSH)
+    except ImportError:
+        import msvcrt  # windows
+        while msvcrt.kbhit():
+            msvcrt.getch()
 
 
 class ConsoleUI(UI):
@@ -32,6 +43,7 @@ class ConsoleUI(UI):
         logger.critical('[Command]: %r' % cmdline)
         logger.critical('[File]: %s' % evt.path)
         logger.critical('********************************\033[0m')
+        flush_stdin()
         yes_no = raw_input('> Block it? (Y/n) ')
 
         allow = 'n' in yes_no.lower()
