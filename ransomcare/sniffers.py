@@ -54,7 +54,7 @@ class DTraceSniffer(object):
     '''
     def __init__(self):
         self.sniffer = None
-        self.stop = False
+        self.should_stop = False
 
     def start(self):
         DEVNULL = open(os.devnull, 'wb')
@@ -63,7 +63,7 @@ class DTraceSniffer(object):
             ['./ransomcare/sniffer', '-x', str(os.getpid()), '-n', 'Python'],
             stdout=subprocess.PIPE, stderr=DEVNULL)
 
-        while not self.stop:
+        while not self.should_stop:
             try:
                 line = self.sniffer.stdout.readline()
                 event_raw = json.loads(line)
@@ -91,3 +91,7 @@ class DTraceSniffer(object):
             elif action == 'unlink':
                 event.dispatch(event.EventFileUnlink(timestamp, pid, path))
         DEVNULL.close()
+        logger.debug('Sniffer stopped')
+
+    def stop(self):
+        self.should_stop = True

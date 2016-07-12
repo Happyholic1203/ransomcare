@@ -16,6 +16,8 @@ stream_handler.setLevel(level)
 logger.addHandler(stream_handler)
 
 import platform
+import signal
+import sys
 
 from . import user_interfaces
 from . import handlers
@@ -32,7 +34,7 @@ def main():
         raise NotImplementedError('Ransomcare is not ready for %s, '
                                   'please help porting it!' % system)
 
-    white_list_handler = handlers.WhiteListHandler()
+    white_list_handler = handlers.WhiteListHandler()  # handles ransom events
     event.register_event_handler(
         event.EventCryptoRansom, white_list_handler.on_crypto_ransom)
     event.register_event_handler(
@@ -40,11 +42,11 @@ def main():
     event.register_event_handler(
         event.EventUserDenyProcess, white_list_handler.on_user_deny_process)
 
-    console_ui = user_interfaces.ConsoleUI()
+    console_ui = user_interfaces.ConsoleUI()  # user responses -> handler
     event.register_event_handler(
         event.EventAskUserAllowOrDeny, console_ui.on_ask_user_allow_or_deny)
 
-    brain = engine.Engine()
+    brain = engine.Engine()  # generates user events -> UI
     event.register_event_handler(
         event.EventFileOpen, brain.on_file_open)
     event.register_event_handler(
@@ -58,4 +60,27 @@ def main():
     event.register_event_handler(
         event.EventFileClose, brain.on_file_close)
 
-    sniffer.start()
+    brain_cleaner_thread = brain.start_cleaner()
+
+    web_ui = user_interfaces.WebUI(engine=brain)
+    web_ui_thread = web_ui.start()
+    event.register_event_handler(
+        event.EventCryptoRansom, web_ui.on_crypto_ransom)
+
+    ctx = {}
+    def clean_up(*args, **kwargs):
+        logger.debug('Cleaning up everything...')
+        sniffer.stop()
+        web_ui.stop()
+        brain.stop_cleaner()
+
+        web_ui_thread.join()
+        brain_cleaner_thread.join()
+        ctx['cleaned_up'] = True
+
+    signal.signal(signal.SIGINT, clean_up)
+
+    sniffer.start()  # generates file events -> brain
+
+    if not ctx.get('cleaned_up'):
+        clean_up()

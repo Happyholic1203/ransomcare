@@ -6,6 +6,8 @@ from __future__ import print_function
 import os
 import logging
 import json
+import threading
+import time
 
 from . import event
 
@@ -14,10 +16,10 @@ logger = logging.getLogger(__name__)
 
 class Engine(object):
     '''
-    Only those PIDs who have done "listdir" operations will be **tracked**.
-    When a **tracked** PID tries to close/unlink a file whose path has been
-    listed before, the engine will check if the file has been fully
-    read/written.
+    Detection logic: Only those PIDs who have done "listdir" operations will
+    be **tracked**. When a **tracked** PID tries to close/unlink a file whose
+    path has been listed before, the engine will check if the file has been
+    fully read/written.
 
     Fully read -> unlink: (NEW_FILE_TYPE) ransomware detected
     Fully read -> fully written -> close: (OVERWRITE_TYPE) ransomware detected
@@ -39,11 +41,34 @@ class Engine(object):
                         "write": 100  # bytes written
                     }
                 },
-                "first_seen": "2016 Jul 12 22:28:31"
+                "last_seen": "2016 Jul 12 22:28:31"
             }
         }
         '''
         self.pid_profiles = {}
+        self._cleaner_stop = False
+        self.cleaner = threading.Thread(target=self.clean_loop)
+        self.cleaner.daemon = True  # dies with the program
+
+    def clean_loop(self):
+        '''
+        Cleans up garbage in brain so it will run faster.
+        '''
+        logger.debug('Brain cleaner started')
+        while not self._cleaner_stop:
+            # TODO
+            logger.debug('Cleaning...')
+            time.sleep(1)
+        logger.debug('Brain cleaner stopped')
+
+    def start_cleaner(self):
+        logger.debug('Starting brain cleaner...')
+        self.cleaner.start()
+        return self.cleaner
+
+    def stop_cleaner(self):
+        logger.debug('Stopping brain.cleaner...')
+        self._cleaner_stop = True
 
     def on_file_open(self, evt):
         logger.debug('open: %d (%s) -> %s' % (
@@ -52,6 +77,7 @@ class Engine(object):
         if not profile:
             return
 
+        profile['last_seen'] = evt.timestamp
         if os.path.isdir(evt.path):
             return
 
@@ -81,6 +107,7 @@ class Engine(object):
             evt.pid, evt.timestamp, evt.path))
         pid_profile = self.pid_profiles.get(evt.pid)
         if pid_profile:
+            pid_profile['last_seen'] = evt.timestamp
             listdirs = pid_profile['listdirs']
             if evt.path not in listdirs:
                 listdirs.append(evt.path)
@@ -92,7 +119,7 @@ class Engine(object):
                 'cmdline': p and p.cmdline(),
                 'listdirs': [evt.path],
                 'files': {},
-                'first_seen': evt.timestamp
+                'last_seen': evt.timestamp
             }
         })
 
@@ -104,6 +131,7 @@ class Engine(object):
         if not file_profile:
             return
 
+        self.pid_profiles[evt.pid]['last_seen'] = evt.timestamp
         file_profile['read'] += evt.size
 
     def on_file_write(self, evt):
@@ -114,6 +142,7 @@ class Engine(object):
         if not file_profile:
             return
 
+        self.pid_profiles[evt.pid]['last_seen'] = evt.timestamp
         file_profile['write'] += evt.size
 
     def on_file_unlink(self, evt):
@@ -124,11 +153,13 @@ class Engine(object):
         if not file_profile:
             return
 
+        profile = self.pid_profiles[evt.pid]
+        profile['last_seen'] = evt.timestamp
         if file_profile['read'] >= file_profile['size']:
             self.on_crypto_ransom(evt.pid, evt.path)
             return
 
-        self.pid_profiles[evt.pid]['files'].pop(evt.path)
+        profile['files'].pop(evt.path)
 
     def on_file_close(self, evt):
         logger.debug('close: %d (%s) -> %s' % (
@@ -138,12 +169,14 @@ class Engine(object):
         if not file_profile:
             return
 
+        profile = self.pid_profiles[evt.pid]
+        profile['last_seen'] = evt.timestamp
         if file_profile['read'] >= file_profile['size'] and \
                 file_profile['write'] >= file_profile['size']:
             self.on_crypto_ransom(evt.pid, evt.path)
             return
 
-        self.pid_profiles[evt.pid]['files'].pop(evt.path)
+        profile['files'].pop(evt.path)
 
     def on_crypto_ransom(self, pid, path):
         logger.debug('Crypto ransom event detected')
