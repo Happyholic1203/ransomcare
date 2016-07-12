@@ -90,7 +90,8 @@ class Engine(object):
             evt.pid: {
                 'cmdline': p and p.cmdline(),
                 'listdirs': [evt.path],
-                'files': {}
+                'files': {},
+                'first_seen': evt.timestamp
             }
         })
 
@@ -103,10 +104,6 @@ class Engine(object):
             return
 
         file_profile['read'] += evt.size
-
-        # early alert: reading on a tracked file, which is already deleted
-        if not os.path.exists(evt.path):
-            self.on_crypto_ransom(evt.pid, evt.path)
 
     def on_file_write(self, evt):
         logger.debug('write: %d (%s) -> %s' % (
@@ -128,6 +125,7 @@ class Engine(object):
 
         if file_profile['read'] >= file_profile['size']:
             self.on_crypto_ransom(evt.pid, evt.path)
+            return
 
         self.pid_profiles[evt.pid]['files'].pop(evt.path)
 
@@ -139,8 +137,10 @@ class Engine(object):
         if not file_profile:
             return
 
-        if file_profile['write'] >= file_profile['size']:
+        if file_profile['read'] >= file_profile['size'] and \
+                file_profile['write'] >= file_profile['size']:
             self.on_crypto_ransom(evt.pid, evt.path)
+            return
 
         self.pid_profiles[evt.pid]['files'].pop(evt.path)
 
