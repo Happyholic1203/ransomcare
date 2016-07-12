@@ -38,7 +38,8 @@ class Engine(object):
                         "read": 100,  # bytes read
                         "write": 100  # bytes written
                     }
-                }
+                },
+                "first_seen": "2016 Jul 12 22:28:31"
             }
         }
         '''
