@@ -5,5 +5,5 @@ from datetime import datetime
 import ransomcare
 
 if __name__ == "__main__":
-    log_file = datetime.now().strftime('%Y-%m-%d_%H:%M:%S.log')
+    log_file = datetime.now().strftime('logs/%Y-%m-%d_%H:%M:%S.log')
     ransomcare.main(log_file=log_file)

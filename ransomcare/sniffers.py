@@ -5,6 +5,10 @@ import os
 import subprocess
 import json
 import logging
+import threading
+import thread
+import time
+import signal
 
 import psutil
 
@@ -20,7 +24,6 @@ def get_absolute_path(event_raw):
     after they're terminated.
     '''
     pid = event_raw.get('pid')
-    fd = event_raw.get('fd')
     path = event_raw.get('path')
     if path and path[0] == '/':
         return os.path.realpath(path)
@@ -57,19 +60,26 @@ class DTraceSniffer(object):
         self.should_stop = False
 
     def start(self):
+        logger.debug('Starting dtrace... excluding self pid: %d' % os.getpid())
         DEVNULL = open(os.devnull, 'wb')
-        logger.debug('Excluding self: %d' % os.getpid())
         self.sniffer = subprocess.Popen(
             ['./ransomcare/sniffer', '-x', str(os.getpid()), '-n', 'Python'],
-            stdout=subprocess.PIPE, stderr=DEVNULL)
-
+            stdout=subprocess.PIPE, stderr=DEVNULL, preexec_fn=os.setsid)
         while not self.should_stop:
             try:
                 line = self.sniffer.stdout.readline()
                 event_raw = json.loads(line)
+            except IOError:
+                logger.debug('DTrace exited')
+                break
             except ValueError:
                 if line != '\n':
                     logger.warn('Failed to JSON-decode: "%r"' % line)
+                continue
+            except KeyboardInterrupt:
+                break
+            except Queue.Empty:
+                time.sleep(0.0001)
                 continue
             action = event_raw.get('action')
             pid = event_raw.get('pid')
@@ -91,9 +101,14 @@ class DTraceSniffer(object):
                 event.dispatch(event.EventFileClose(timestamp, pid, path))
             elif action == 'unlink':
                 event.dispatch(event.EventFileUnlink(timestamp, pid, path))
-        DEVNULL.close()
         logger.debug('Sniffer stopped')
 
     def stop(self):
+        if self.should_stop:
+            return
         logger.debug('Stopping sniffer...')
         self.should_stop = True
+        if self.sniffer.returncode is None:
+            pgid = os.getpgid(self.sniffer.pid)
+            logger.debug('Killing pgid: %d' % pgid)
+            os.killpg(pgid, signal.SIGTERM)

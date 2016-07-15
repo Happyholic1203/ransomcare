@@ -60,7 +60,8 @@ class Engine(object):
         }
         '''
         self.pid_profiles = {}
-        self._cleaner_stop = False
+        self._run_event = threading.Event()
+        self._run_event.set()
         self.cleaner = threading.Thread(target=self.clean_loop)
         self.cleaner.daemon = True  # dies with the program
 
@@ -72,7 +73,7 @@ class Engine(object):
         fmt = '%Y %b %d %H:%M:%S'
         period_seconds = 5
         obselete_seconds = 300
-        while not self._cleaner_stop:
+        while self._run_event.is_set():
             obselete_pids = []
             long_ago = datetime.now() - timedelta(seconds=obselete_seconds)
             for pid, profile in self.pid_profiles.iteritems():
@@ -97,7 +98,8 @@ class Engine(object):
 
     def stop_cleaner(self):
         logger.debug('Stopping brain.cleaner...')
-        self._cleaner_stop = True
+        self._run_event.clear()
+        self.cleaner.join()
 
     def on_file_open(self, evt):
         logger.debug('open: %d (%s) -> %s' % (

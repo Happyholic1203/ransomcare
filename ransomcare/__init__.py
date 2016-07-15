@@ -8,8 +8,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 import platform
-import signal
-import sys
+import time
 
 from . import user_interfaces
 from . import handlers
@@ -36,6 +35,28 @@ def _init_logging(level, log_stream=True, log_file=None):
 
 
 def main(log_level=logging.DEBUG, log_stream=True, log_file=None):
+    """
+          [Sniffer]
+              |
+              |
+         file events
+              |
+              |
+              v
+          [Engine] --------------------+
+              |                        |
+              |                        |
+         ransom events -----+          |
+              |             |          |
+              v             |     suspicious
+          [Handler]         |     processes
+          |      ^          |          |
+        allow?   |          |          |
+          |   response      |          |
+          v      |          |          |
+          [  UI  ] <--------+----------+
+    """
+
     _init_logging(level=log_level, log_stream=log_stream, log_file=log_file)
 
     system = platform.platform().lower()
@@ -53,7 +74,8 @@ def main(log_level=logging.DEBUG, log_stream=True, log_file=None):
     event.register_event_handler(
         event.EventUserDenyProcess, white_list_handler.on_user_deny_process)
 
-    console_ui = user_interfaces.ConsoleUI()  # user responses -> handler
+    # passes user responses -> handler
+    console_ui = user_interfaces.ConsoleUI()
     event.register_event_handler(
         event.EventAskUserAllowOrDeny, console_ui.on_ask_user_allow_or_deny)
 
@@ -71,24 +93,19 @@ def main(log_level=logging.DEBUG, log_stream=True, log_file=None):
     event.register_event_handler(
         event.EventFileClose, brain.on_file_close)
 
-    brain_cleaner_thread = brain.start_cleaner()
+    brain.start_cleaner()
 
-    web_ui = user_interfaces.WebUI(engine=brain)
-    web_ui_thread = web_ui.start()
+    web_ui = user_interfaces.WebUI(engine=brain, sniffer=sniffer)
+    web_ui.start()
     event.register_event_handler(
         event.EventCryptoRansom, web_ui.on_crypto_ransom)
 
-    try:
-        sniffer.start()  # generates file events -> brain
-    except KeyboardInterrupt:
-        pass
+    sniffer.start()  # main loop: generates file events -> brain
 
     logger.debug('Cleaning up everything...')
+
     sniffer.stop()
     web_ui.stop()
     brain.stop_cleaner()
-
-    web_ui_thread.join()
-    brain_cleaner_thread.join()
 
     logger.debug('Everything cleaned up successfully, exiting...')
