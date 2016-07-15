@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+from datetime import datetime
 import ransomcare
 
 if __name__ == "__main__":
-    ransomcare.main()
+    log_file = datetime.now().strftime('%Y-%m-%d_%H:%M:%S.log')
+    ransomcare.main(log_file=log_file)

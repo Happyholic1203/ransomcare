@@ -68,7 +68,8 @@ class DTraceSniffer(object):
                 line = self.sniffer.stdout.readline()
                 event_raw = json.loads(line)
             except ValueError:
-                logger.warn('Failed to JSON-decode: "%r"' % line)
+                if line != '\n':
+                    logger.warn('Failed to JSON-decode: "%r"' % line)
                 continue
             action = event_raw.get('action')
             pid = event_raw.get('pid')
@@ -94,4 +95,5 @@ class DTraceSniffer(object):
         logger.debug('Sniffer stopped')
 
     def stop(self):
+        logger.debug('Stopping sniffer...')
         self.should_stop = True

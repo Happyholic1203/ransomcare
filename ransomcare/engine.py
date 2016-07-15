@@ -8,10 +8,24 @@ import logging
 import json
 import threading
 import time
+from datetime import datetime, timedelta
+
+import psutil
 
 from . import event
 
 logger = logging.getLogger(__name__)
+
+
+def is_alive(pid):
+    try:
+        p = psutil.Process(pid)
+        return p.is_running()
+    except psutil.NoSuchProcess:
+        return False
+    except Exception as e:
+        logger.exception(e)
+        return False
 
 
 class Engine(object):
@@ -55,10 +69,25 @@ class Engine(object):
         Cleans up garbage in brain so it will run faster.
         '''
         logger.debug('Brain cleaner started')
+        fmt = '%Y %b %d %H:%M:%S'
+        period_seconds = 5
+        obselete_seconds = 300
         while not self._cleaner_stop:
-            # TODO
-            logger.debug('Cleaning...')
-            time.sleep(1)
+            obselete_pids = []
+            long_ago = datetime.now() - timedelta(seconds=obselete_seconds)
+            for pid, profile in self.pid_profiles.iteritems():
+                last_seen = datetime.strptime(
+                    profile['last_seen'], fmt)
+                if last_seen <= long_ago and not is_alive(pid):
+                    obselete_pids.append(pid)
+            if obselete_pids:
+                logger.debug('Cleaning obselete pids: %r...' % obselete_pids)
+                for obselete_pid in obselete_pids:
+                    try:
+                        del self.pid_profiles[pid]
+                    except KeyError:
+                        pass
+            time.sleep(period_seconds)
         logger.debug('Brain cleaner stopped')
 
     def start_cleaner(self):
