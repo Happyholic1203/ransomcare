@@ -78,20 +78,17 @@ def main(log_level=logging.DEBUG, log_stream=True, log_file=None):
     event.register_event_handler(
         event.EventCryptoRansom, web_ui.on_crypto_ransom)
 
-    ctx = {}
-    def clean_up(*args, **kwargs):
-        logger.debug('Cleaning up everything...')
-        sniffer.stop()
-        web_ui.stop()
-        brain.stop_cleaner()
+    try:
+        sniffer.start()  # generates file events -> brain
+    except KeyboardInterrupt:
+        pass
 
-        web_ui_thread.join()
-        brain_cleaner_thread.join()
-        ctx['cleaned_up'] = True
+    logger.debug('Cleaning up everything...')
+    sniffer.stop()
+    web_ui.stop()
+    brain.stop_cleaner()
 
-    signal.signal(signal.SIGINT, clean_up)
+    web_ui_thread.join()
+    brain_cleaner_thread.join()
 
-    sniffer.start()  # generates file events -> brain
-
-    if not ctx.get('cleaned_up'):
-        clean_up()
+    logger.debug('Everything cleaned up successfully, exiting...')

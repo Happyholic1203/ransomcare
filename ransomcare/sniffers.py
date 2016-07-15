@@ -31,7 +31,7 @@ def get_absolute_path(event_raw):
         process = psutil.Process(pid)
         cwd = process.cwd()
         pid_cwd[pid] = cwd  # cache every pid's cwd
-    except psutil.NoSuchProcess:
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
         cwd = pid_cwd.get(pid)
         if not cwd:
             return None
