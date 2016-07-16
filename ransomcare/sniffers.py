@@ -63,7 +63,7 @@ class DTraceSniffer(object):
         logger.debug('Starting dtrace... excluding self pid: %d' % os.getpid())
         DEVNULL = open(os.devnull, 'wb')
         self.sniffer = subprocess.Popen(
-            ['./ransomcare/sniffer', '-x', str(os.getpid()), '-n', 'Python'],
+            ['./ransomcare/sniffer', '-x', str(os.getpid())],
             stdout=subprocess.PIPE, stderr=DEVNULL, preexec_fn=os.setsid)
         while not self.should_stop:
             try:
