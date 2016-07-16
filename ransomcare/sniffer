@@ -4,12 +4,13 @@ filter=0
 pname=.; pid=0; exclude_pid=0; dir=/Users
 opt_name=0; opt_pid=0; opt_exclude_pid=0; opt_verbose=0; opt_sys=0
 
-while getopts n:p:x:dsv name
+while getopts n:p:x:i:dsv name
 do
     case $name in
         n) opt_name=1; pname=$OPTARG;;
         p) opt_pid=1; pid=$OPTARG;;
         x) opt_exclude_pid=1; exclude_pid=$OPTARG;;
+        i) opt_names=1; IFS=',' read -r -a pnames <<< "$OPTARG";;
         d) [[ $OPTARG = /* ]] && dir=$OPTARG || dir=$PWD/${OPTARG#./};;
         s) opt_sys=1;;
         v) opt_verbose=1;;
@@ -21,17 +22,26 @@ USAGE: $0 [-p PID] [-n name]
         -p PID     # this PID only
         -x PID     # exclude this PID
         -n name    # this process name only
+        -i names   # ignore a list of execnames (separated by commas)
 For example,
-    $0 -p 1234
-    $0 -x 1234
-    $0 -n Python
+    $0 -p 1234  # only sniff events from PID 1234
+    $0 -x 1234  # exclude PID 1234
+    $0 -n Python  # only sniff events from Python
+    $0 -i Evernote,mdworker  # ignore Evernote and mdworker
 EOF
         exit 1
     esac
 done
 
-if [ $opt_pid -eq 1 -o $opt_name -eq 1 ]; then
+if [ $opt_pid -eq 1 -o $opt_name -eq 1 -o $opt_names -eq 1 ]; then
     filter=1
+fi
+
+whitelist_filters=''
+if [ $opt_names -eq 1 ]; then
+    for p in ${pnames[@]}; do
+        whitelist_filters+="    (\"$p\" == execname) ? self->ok = 0 : 1;"$'\n'
+    done
 fi
 
 dtrace='
@@ -65,6 +75,9 @@ syscall::unlink:entry
     (OPT_name == 1 && NAME == strstr(NAME, execname)) ? self->ok = 1 : 1;
     (OPT_name == 1 && NAME == strstr(execname, NAME)) ? self->ok = 1 : 1;
     (OPT_pid == 1 && PID == pid) ? self->ok = 1 : 1;
+
+    /* Whitelist filters: ignore those processes */
+'$whitelist_filters'
     (OPT_exclude_pid == 1 && EXCLUDE_PID == pid) ? self->ok = 0 : 1;
     (OPT_include_sys && PID <= 1024) ? self->ok = 0 : 1;
 }
@@ -157,6 +170,7 @@ syscall::close*:entry
 '
 
 if [ $opt_verbose -eq 1 ]; then
+    echo "$dtrace"
     sudo dtrace -q -n "$dtrace" 2>/dev/null
 else
     sudo dtrace -q -n "$dtrace"
