@@ -1,23 +1,32 @@
 #!/bin/bash
 
-filter=0
-pname=.; pid=0; exclude_pid=0; dir=/Users
-opt_name=0; opt_pid=0; opt_exclude_pid=0; opt_verbose=0; opt_sys=0
+dir=/Users
+pname_filter='    /* off */'
+pid_filter='    /* off */'
+ignore_pname_filters='    /* off */'
+exclude_pid_filter='    /* off */'
+opt_verbose=0
+opt_test=0
 
-while getopts n:p:x:i:dsv name
+while getopts n:p:x:i:dvt name
 do
     case $name in
-        n) opt_name=1; pname=$OPTARG;;
-        p) opt_pid=1; pid=$OPTARG;;
-        x) opt_exclude_pid=1; exclude_pid=$OPTARG;;
-        i) opt_names=1; IFS=',' read -r -a pnames <<< "$OPTARG";;
+        n) pname_filter="    (execname == \"$OPTARG\") ? self->ok = 1 : 1;";;
+        p) pid_filter="    (pid == $OPTARG) ? self->ok = 1 : 1;";;
+        x) exclude_pid_filter="    (pid == $OPTARG) ? self->ok = 0 : 1;";;
+        i)
+            IFS=',' read -r -a pnames <<< "$OPTARG";
+            ignore_pname_filters=''
+            for p in ${pnames[@]}; do
+                ignore_pname_filters+="    (\"$p\" == execname) ? self->ok = 0 : 1;"$'\n'
+            done;;
         d) [[ $OPTARG = /* ]] && dir=$OPTARG || dir=$PWD/${OPTARG#./};;
-        s) opt_sys=1;;
         v) opt_verbose=1;;
+        t) opt_test=1;;
         h|?) cat <<EOF >&2
 USAGE: $0 [-p PID] [-n name]
         -v         # verbose
-        -s         # include system processes (default: off)
+        -t         # test-only: shows the generated dtrace script, will not run
         -d DIR     # sniffer events under this dir only
         -p PID     # this PID only
         -x PID     # exclude this PID
@@ -33,30 +42,10 @@ EOF
     esac
 done
 
-if [ $opt_pid -eq 1 -o $opt_name -eq 1 -o $opt_names -eq 1 ]; then
-    filter=1
-fi
-
-whitelist_filters=''
-if [ $opt_names -eq 1 ]; then
-    for p in ${pnames[@]}; do
-        whitelist_filters+="    (\"$p\" == execname) ? self->ok = 0 : 1;"$'\n'
-    done
-fi
-
 dtrace='
 /*
 * Command line arguments
 */
-inline int OPT_pid          = '$opt_pid';
-inline int OPT_name         = '$opt_name';
-inline int OPT_exclude_pid  = '$opt_exclude_pid';
-inline int OPT_include_sys  = '$opt_sys';
-
-inline int FILTER           = '$filter';
-inline int PID              = '$pid';
-inline int EXCLUDE_PID      = '$exclude_pid';
-inline string NAME          = "'$pname'";
 inline int DIR_LEN          = '$(echo -n "$dir" | wc -c)';
 inline string DIR           = "'$dir'";
 
@@ -70,16 +59,19 @@ syscall::*write:entry,
 syscall::close:entry,
 syscall::unlink:entry
 {
-    self->ok = FILTER ? 0 : 1;
+    self->ok = 1;
 
-    (OPT_name == 1 && NAME == strstr(NAME, execname)) ? self->ok = 1 : 1;
-    (OPT_name == 1 && NAME == strstr(execname, NAME)) ? self->ok = 1 : 1;
-    (OPT_pid == 1 && PID == pid) ? self->ok = 1 : 1;
+    /* Process name filter */
+'$pname_filter'
+
+    /* Only this PID */
+'$pid_filter'
 
     /* Whitelist filters: ignore those processes */
-'$whitelist_filters'
-    (OPT_exclude_pid == 1 && EXCLUDE_PID == pid) ? self->ok = 0 : 1;
-    (OPT_include_sys && PID <= 1024) ? self->ok = 0 : 1;
+'$ignore_pname_filters'
+
+    /* Exclude PID */
+'$exclude_pid_filter'
 }
 
 syscall::open*:entry
@@ -169,8 +161,9 @@ syscall::close*:entry
 }
 '
 
-if [ $opt_verbose -eq 1 ]; then
+if [ $opt_test -eq 1 ]; then
     echo "$dtrace"
+elif [ $opt_verbose -eq 1 ]; then
     sudo dtrace -q -n "$dtrace" 2>/dev/null
 else
     sudo dtrace -q -n "$dtrace"
