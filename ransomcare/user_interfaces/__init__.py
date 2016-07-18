@@ -20,8 +20,7 @@ class WebUI(UI):
     '''
     Can be used to expose internal states such as engine, sniffer states.
     '''
-    def __init__(self, engine=None, sniffer=None, host='localhost', port=8888,
-                 config=None):
+    def __init__(self, engine=None, sniffer=None, host='localhost', port=8888):
         self.engine = engine
         self.sniffer = sniffer
         self.host = host
@@ -34,9 +33,8 @@ class WebUI(UI):
         self.web.ctx['engine'] = self.engine
         self.web.ctx['sniffer'] = self.sniffer
         self.web.ctx['events'] = []
-        if config is None:
-            from ..config import prod
-            config = prod
+
+        from .. import config
         self.web.app.config.from_object(config)
         self.web.init()
 

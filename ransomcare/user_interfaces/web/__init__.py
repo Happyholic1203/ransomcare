@@ -10,17 +10,16 @@ logger = logging.getLogger(__name__)
 
 ctx = {}  # ransomcare context: sniffer, engine, etc will be populated
 app = Flask(__name__)
-db = None  # to be initialized in `init`
 
 def init():
+    logger.debug('Initializing Web UI...')
     from .views.api import api
     app.register_blueprint(api, url_prefix='/api')
 
-    db = SQLAlchemy(app)
-    globals().update({'db': db})  # populate db
+    from ... import models  # populate metadata
 
-    import models  # populate metadata
+    from ... import db
 
     if not db.engine.table_names():
         logger.debug('Initializing DB')
-        db.create_all()
+        models.Base.metadata.create_all(bind=db.engine)

@@ -34,7 +34,7 @@ def _init_logging(level, log_stream=True, log_file=None):
         logger.addHandler(file_handler)
 
 
-def main(log_level=logging.DEBUG, log_stream=True, log_file=None, config=None):
+def main(log_level=logging.DEBUG, log_stream=True, log_file=None):
     """
           [Sniffer]
               |
@@ -57,7 +57,7 @@ def main(log_level=logging.DEBUG, log_stream=True, log_file=None, config=None):
           [  UI  ] <--------+----------+
     """
 
-    _init_logging(level=log_level, log_stream=log_stream, log_file=log_file)
+    _init_logging(level=log_level, log_stream=log_stream)
 
     system = platform.platform().lower()
     if system.startswith('darwin'):
@@ -96,7 +96,7 @@ def main(log_level=logging.DEBUG, log_stream=True, log_file=None, config=None):
     brain.start_cleaner()
 
     web_ui = user_interfaces.WebUI(
-        engine=brain, sniffer=sniffer, config=config)
+        engine=brain, sniffer=sniffer)
     web_ui.start()
     event.register_event_handler(
         event.EventCryptoRansom, web_ui.on_crypto_ransom)
