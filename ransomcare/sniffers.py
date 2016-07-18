@@ -42,6 +42,23 @@ def get_absolute_path(event_raw):
     return os.path.realpath(os.path.join(cwd, path))
 
 
+def to_absolute(pid, fd, path):
+    if not path:
+        return None
+    if path[0] == '/':
+        return path
+    try:
+        process = psutil.Process(pid)
+        cwd = process.cwd()
+        pid_cwd[pid] = cwd  # cache every pid's cwd
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        cwd = pid_cwd.get(pid)
+        if not cwd:
+            return None
+
+    return os.path.realpath(os.path.join(cwd, path))
+
+
 class DTraceSniffer(object):
     '''
     Sniffs and generates file events:
@@ -58,6 +75,7 @@ class DTraceSniffer(object):
     def __init__(self):
         self.sniffer = None
         self.should_stop = False
+        self.files = {}  # files[pid][fd] gives the filename
 
     def start(self):
         logger.debug('Starting dtrace... excluding self pid: %d' % os.getpid())
@@ -83,9 +101,21 @@ class DTraceSniffer(object):
                 continue
             action = event_raw.get('action')
             pid = event_raw.get('pid')
-            path = get_absolute_path(event_raw)  # returns None if file closed
-            if path is None:
-                continue  # ignore closed files
+            fd = event_raw.get('fd')
+            path = event_raw.get('path')
+            if action == 'open':
+                path = self.update_path(pid, fd, path)
+                if not path:
+                    continue
+            elif action in ('close', 'unlink'):
+                path = self.remove_path(pid, fd)
+                if not path:
+                    continue
+            else:
+                path = self.get_path(pid, fd)
+                if not path:
+                    continue
+
             size = event_raw.get('size')
             timestamp = event_raw.get('t')
             if action == 'open':
@@ -112,3 +142,37 @@ class DTraceSniffer(object):
             pgid = os.getpgid(self.sniffer.pid)
             logger.debug('Killing pgid: %d' % pgid)
             os.killpg(pgid, signal.SIGTERM)
+
+    def update_path(self, pid, fd, path):
+        if not path:
+            return None
+        self.files.setdefault(pid, {})
+        if path[0] != '/':
+            abspath = to_absolute(pid, fd, path)
+            if not abspath:
+                return None
+        else:
+            abspath = path
+        self.files[pid][fd] = abspath
+        return abspath
+
+    def remove_path(self, pid, fd):
+        '''
+        Removes the file path associated with (pid, fd)
+
+        Args:
+            pid (int)
+            fd (int)
+
+        Returns:
+            string: absolute path to the file associated with (pid, fd)
+        '''
+        path = self.files.get(pid, {}).get(fd, None)
+        if path:
+            del self.files[pid][fd]
+            if len(self.files[pid]) == 0:
+                del self.files[pid]
+        return path
+
+    def get_path(self, pid, fd):
+        return self.files.get(pid, {}).get(fd, None)

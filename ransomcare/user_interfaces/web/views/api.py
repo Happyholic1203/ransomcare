@@ -6,9 +6,9 @@ import os
 import signal
 import logging
 
-from flask import request, Blueprint
+from flask import request, Blueprint, Response
 
-from . import ctx
+from .. import ctx
 
 logger = logging.getLogger(__name__)
 api = Blueprint('api', __name__)
@@ -28,9 +28,17 @@ def _shutdown():
 
 @api.route('/processes')
 def engine():
-    return json.dumps(ctx['engine'].pid_profiles, indent=2)
+    body = json.dumps(ctx['engine'].pid_profiles)
+    resp = Response(response=body, status=200, mimetype='application/json')
+    return resp
 
 
 @api.route('/events')
 def ransom_events():
-    return json.dumps(ctx['events'], indent=2)
+    body = json.dumps(ctx['events'])
+    return Response(response=body, status=200, mimetype='application/json')
+
+@api.route('/sniffer')
+def sniffer():
+    body = json.dumps(ctx['sniffer'].files)
+    return Response(response=body, status=200, mimetype='application/json')

@@ -34,7 +34,7 @@ def _init_logging(level, log_stream=True, log_file=None):
         logger.addHandler(file_handler)
 
 
-def main(log_level=logging.DEBUG, log_stream=True, log_file=None):
+def main(log_level=logging.DEBUG, log_stream=True, log_file=None, config=None):
     """
           [Sniffer]
               |
@@ -95,7 +95,8 @@ def main(log_level=logging.DEBUG, log_stream=True, log_file=None):
 
     brain.start_cleaner()
 
-    web_ui = user_interfaces.WebUI(engine=brain, sniffer=sniffer)
+    web_ui = user_interfaces.WebUI(
+        engine=brain, sniffer=sniffer, config=config)
     web_ui.start()
     event.register_event_handler(
         event.EventCryptoRansom, web_ui.on_crypto_ransom)
