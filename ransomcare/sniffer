@@ -55,6 +55,7 @@ syscall::write_nocancel:entry,
 syscall::close_nocancel:entry,
 syscall::getdirentries:entry,
 syscall::getdirentries64:entry,
+syscall::open:entry,
 syscall::read:entry,
 syscall::write:entry,
 syscall::close:entry,
@@ -76,59 +77,74 @@ syscall::unlink:entry
 }
 
 syscall::open:entry,
-syscall::open_nocancel:entry
+syscall::open_nocancel:entry,
+syscall::unlink:entry
 /self->ok/
 {
     self->path = copyinstr(arg0);
 
-    /* Extension checking
-    this->idx = rindex(self->path, ".");
-    self->ext = (this->idx >= 0) ? substr(self->path, this->idx) : "";
-    strlen(self->ext) > 0 ? self->ext = substr(self->ext, 1) : "";
+    /* ignore those cases where path is NULL */
+    (strlen(self->path) == 0) ? (self->ok = 0) : 1;
 
-    (self->ext == "png") ? (self->ok = 1) : (self->ok = 0);
-    */
+    /* make sure the path is wanted, in the case of an absolute path */
+    (
+        substr(self->path, 0, 1) != "/" ||
+        substr(self->path, 0, DIR_LEN) == DIR
+    ) ? 1 : (self->ok = 0);
+
+    (self->ok == 1) ? "" : (self->path = 0);
 }
 
 syscall::open:return,
 syscall::open_nocancel:return
-/self->ok &&
- arg1 > 2 &&
- self->path != "" &&
- (substr(self->path, 0, 1) != "/" || substr(self->path, 0, DIR_LEN) == DIR)/
+/self->ok/
 {
-    /* Check if path is our watched dir */
-    /*
-    (self->path != "" &&
-        (substr(self->path, 0, 1) != "/" ||
-        substr(self->path, 0, DIR_LEN) == DIR)
-    ) ? printf("{\"action\": \"open\", \"pid\": %d, \"path\": \"%s\", \"fd\": %d, \"t\": \"%-20Y\"}\n", pid, self->path, arg1, walltimestamp) : printf("");
-    */
+    /* ignore stdout, stderr */
+    arg1 <= 2 ? (self->ok = 0) : 1;
+}
 
+syscall::open:return,
+syscall::open_nocancel:return
+/self->ok/
+{
     printf("{\"action\": \"open\", \"pid\": %d, \"path\": \"%s\", \"fd\": %d, \"t\": \"%-20Y\"}\n", pid, self->path, arg1, walltimestamp);
-
-    /* Apple crippled dtrace so that fi_pathname shows "??/..."
-    self->fd_path[arg1] = substr(self->path, 0, 1) == "/" ? self->path : stringof(fds[arg1].fi_pathname);
-    */
     self->fd_path[arg1] = self->path;
-
-    self->path = 0;
 }
 
 syscall::unlink:entry
-/self->ok &&
- self->fd_path[arg0] != "" &&
- (substr(self->fd_path[arg0], 0, 1) != "/" || substr(self->fd_path[arg0], 0, DIR_LEN) == DIR)/
+/self->ok/
 {
     printf("{\"action\": \"unlink\", \"pid\": %d, \"path\": \"%s\", \"t\": \"%-20Y\"}\n",
-            pid, copyinstr(arg0), walltimestamp);
+            pid, self->path, walltimestamp);
+}
+
+syscall::getdirentries:entry,
+syscall::getdirentries64:entry,
+syscall::read:entry,
+syscall::read_nocancel:entry,
+syscall::write:entry,
+syscall::write_nocancel:entry,
+syscall::close:entry,
+syscall::close_nocancel:entry
+/self->ok/
+{
+    /* ignore stdout, stderr */
+    (arg0 <= 2) ? (self->ok = 0) : 1;
+
+    /* make sure the path is wanted, in the case of an absolute path */
+    this->file = self->fd_path[arg0];
+    (
+        self->ok &&
+        strlen(this->file) != 0 &&
+        (substr(this->file, 0, 1) != "/" || substr(this->file, 0, DIR_LEN) == DIR)
+    ) ? 1 : (self->ok = 0);
+
+    this->file = 0;
 }
 
 syscall::getdirentries:entry,
 syscall::getdirentries64:entry
-/self->ok &&
- self->fd_path[arg0] != "" &&
- (substr(self->fd_path[arg0], 0, 1) != "/" || substr(self->fd_path[arg0], 0, DIR_LEN) == DIR)/
+/self->ok/
 {
     printf("{\"action\": \"listdir\", \"pid\": %d, \"fd\": %d, \"path\": \"%s\", \"t\": \"%-20Y\"}\n",
             pid, arg0, self->fd_path[arg0], walltimestamp);
@@ -136,10 +152,7 @@ syscall::getdirentries64:entry
 
 syscall::read:entry,
 syscall::read_nocancel:entry
-/self->ok &&
- arg0 > 2 &&
- self->fd_path[arg0] != "" &&
- (substr(self->fd_path[arg0], 0, 1) != "/" || substr(self->fd_path[arg0], 0, DIR_LEN) == DIR)/
+/self->ok/
 {
     printf("{\"action\": \"read\", \"pid\": %d, \"fd\": %d, \"path\": \"%s\", \"size\": %d, \"t\": \"%-20Y\"}\n",
             pid, arg0, self->fd_path[arg0], arg2, walltimestamp);
@@ -147,10 +160,7 @@ syscall::read_nocancel:entry
 
 syscall::write:entry,
 syscall::write_nocancel:entry
-/self->ok &&
- arg0 > 2 &&
- self->fd_path[arg0] != "" &&
- (substr(self->fd_path[arg0], 0, 1) != "/" || substr(self->fd_path[arg0], 0, DIR_LEN) == DIR)/
+/self->ok/
 {
     printf("{\"action\": \"write\", \"pid\": %d, \"fd\": %d, \"path\": \"%s\", \"size\": %d, \"t\": \"%-20Y\"}\n",
             pid, arg0, self->fd_path[arg0], arg2, walltimestamp);
@@ -158,26 +168,26 @@ syscall::write_nocancel:entry
 
 syscall::close:entry,
 syscall::close_nocancel:entry
-/self->ok &&
- arg0 > 2 &&
- self->fd_path[arg0] != "" &&
- (substr(self->fd_path[arg0], 0, 1) != "/" || substr(self->fd_path[arg0], 0, DIR_LEN) == DIR)/
+/self->ok/
 {
     printf("{\"action\": \"close\", \"pid\": %d, \"fd\": %d, \"path\": \"%s\", \"t\": \"%-20Y\"}\n",
             pid, arg0, self->fd_path[arg0], walltimestamp);
+    self->fd_path[arg0] = 0;
 }
 
 syscall::open_nocancel:return,
 syscall::read_nocancel:return,
 syscall::write_nocancel:return,
 syscall::close_nocancel:return,
-syscall::getdirentries:entry,
-syscall::getdirentries64:entry,
+syscall::getdirentries:return,
+syscall::getdirentries64:return,
+syscall::open:return,
 syscall::read:return,
 syscall::write:return,
 syscall::close:return,
 syscall::unlink:return
 {
+    self->path = 0;
     self->ok = 0;
 }
 '
@@ -185,7 +195,7 @@ syscall::unlink:return
 if [ $opt_test -eq 1 ]; then
     echo "$dtrace"
 elif [ $opt_verbose -eq 1 ]; then
-    sudo dtrace -q -n "$dtrace" 2>/dev/null
+    sudo dtrace -x 'dynvarsize=16m' -q -n "$dtrace" 2>/dev/null
 else
-    sudo dtrace -q -n "$dtrace"
+    sudo dtrace -x 'dynvarsize=16m' -q -n "$dtrace"
 fi
