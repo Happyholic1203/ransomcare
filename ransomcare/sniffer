@@ -49,13 +49,14 @@ dtrace='
 inline int DIR_LEN          = '$(echo -n "$dir" | wc -c)';
 inline string DIR           = "'$dir'";
 
-syscall::*open_nocancel:entry,
-syscall::*read_nocancel:entry,
-syscall::*write_nocancel:entry,
+syscall::open_nocancel:entry,
+syscall::read_nocancel:entry,
+syscall::write_nocancel:entry,
 syscall::close_nocancel:entry,
-syscall::getdirentries*:entry,
-syscall::*read:entry,
-syscall::*write:entry,
+syscall::getdirentries:entry,
+syscall::getdirentries64:entry,
+syscall::read:entry,
+syscall::write:entry,
 syscall::close:entry,
 syscall::unlink:entry
 {
@@ -74,7 +75,8 @@ syscall::unlink:entry
 '$exclude_pid_filter'
 }
 
-syscall::open*:entry
+syscall::open:entry,
+syscall::open_nocancel:entry
 /self->ok/
 {
     self->path = copyinstr(arg0);
@@ -88,7 +90,8 @@ syscall::open*:entry
     */
 }
 
-syscall::open*:return
+syscall::open:return,
+syscall::open_nocancel:return
 /self->ok &&
  arg1 > 2 &&
  self->path != "" &&
@@ -121,7 +124,8 @@ syscall::unlink:entry
             pid, copyinstr(arg0), walltimestamp);
 }
 
-syscall::getdirentries*:entry
+syscall::getdirentries:entry,
+syscall::getdirentries64:entry
 /self->ok &&
  self->fd_path[arg0] != "" &&
  (substr(self->fd_path[arg0], 0, 1) != "/" || substr(self->fd_path[arg0], 0, DIR_LEN) == DIR)/
@@ -130,7 +134,8 @@ syscall::getdirentries*:entry
             pid, arg0, self->fd_path[arg0], walltimestamp);
 }
 
-syscall::read*:entry
+syscall::read:entry,
+syscall::read_nocancel:entry
 /self->ok &&
  arg0 > 2 &&
  self->fd_path[arg0] != "" &&
@@ -140,7 +145,8 @@ syscall::read*:entry
             pid, arg0, self->fd_path[arg0], arg2, walltimestamp);
 }
 
-syscall::write*:entry
+syscall::write:entry,
+syscall::write_nocancel:entry
 /self->ok &&
  arg0 > 2 &&
  self->fd_path[arg0] != "" &&
@@ -150,7 +156,8 @@ syscall::write*:entry
             pid, arg0, self->fd_path[arg0], arg2, walltimestamp);
 }
 
-syscall::close*:entry
+syscall::close:entry,
+syscall::close_nocancel:entry
 /self->ok &&
  arg0 > 2 &&
  self->fd_path[arg0] != "" &&
@@ -158,6 +165,20 @@ syscall::close*:entry
 {
     printf("{\"action\": \"close\", \"pid\": %d, \"fd\": %d, \"path\": \"%s\", \"t\": \"%-20Y\"}\n",
             pid, arg0, self->fd_path[arg0], walltimestamp);
+}
+
+syscall::open_nocancel:return,
+syscall::read_nocancel:return,
+syscall::write_nocancel:return,
+syscall::close_nocancel:return,
+syscall::getdirentries:entry,
+syscall::getdirentries64:entry,
+syscall::read:return,
+syscall::write:return,
+syscall::close:return,
+syscall::unlink:return
+{
+    self->ok = 0;
 }
 '
 
