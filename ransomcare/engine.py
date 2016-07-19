@@ -17,14 +17,17 @@ from . import event
 logger = logging.getLogger(__name__)
 
 
+def get_process(pid):
+    try:
+        return psutil.Process(pid)
+    except Exception:
+        return None
+
+
 def is_alive(pid):
     try:
-        p = psutil.Process(pid)
-        return p.is_running()
-    except psutil.NoSuchProcess:
-        return False
-    except Exception as e:
-        logger.exception(e)
+        return get_process(pid).is_running()
+    except Exception:
         return False
 
 
@@ -85,7 +88,7 @@ class Engine(object):
                 logger.debug('Cleaning obselete pids: %r...' % obselete_pids)
                 for obselete_pid in obselete_pids:
                     try:
-                        del self.pid_profiles[pid]
+                        del self.pid_profiles[obselete_pid]
                     except KeyError:
                         pass
             time.sleep(period_seconds)
@@ -144,7 +147,7 @@ class Engine(object):
                 listdirs.append(evt.path)
             return
 
-        p = evt.get_process()
+        p = get_process(evt.pid)
         self.pid_profiles.update({
             evt.pid: {
                 'cmdline': p and p.cmdline(),
