@@ -22,11 +22,13 @@ class Handler(object):
         raise NotImplementedError()
 
 
-class WhiteListHandler(Handler):
+class WhiteListHandler(Handler, event.EventHandler):
     def __init__(self):
+        event.EventHandler.__init__(self)
         self.whitelist = []  # exes (TODO: persist to a file)
         self.suspended = []  # processes
 
+    @event.EventCryptoRansom.register_handler
     def on_crypto_ransom(self, evt):
         logger.debug('Whitelist: %s' % json.dumps(self.whitelist, indent=4))
         logger.debug('Suspended: %s' % json.dumps(self.suspended, indent=4))
@@ -44,10 +46,11 @@ class WhiteListHandler(Handler):
         if cmdline not in self.whitelist:
             p.suspend()
             self.suspended.append(p)
-            event.dispatch(event.EventAskUserAllowOrDeny(p, evt.path))
+            event.EventAskUserAllowOrDeny(p, evt.path).fire()
         else:
             logger.info('Allowed white-listed process: %d' % evt.pid)
 
+    @event.EventAskUserAllowOrDeny.register_handler
     def on_user_allow_process(self, evt):
         self.whitelist.append(evt.process.cmdline())
         for p in self.suspended:
@@ -58,6 +61,7 @@ class WhiteListHandler(Handler):
                 self.suspended.remove(p)
                 return
 
+    @event.EventUserDenyProcess.register_handler
     def on_user_deny_process(self, evt):
         for p in self.suspended:
             if p.pid == evt.process.pid:

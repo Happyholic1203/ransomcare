@@ -2,21 +2,123 @@
 # -*- coding: utf-8 -*-
 
 import logging
+import Queue
+import threading
+import inspect
+
 import psutil
 
 logger = logging.getLogger(__name__)
 
 
-class Event(object):
-    @classmethod
-    def get_id(cls):
-        return id(cls)
+def _is_event_handler(method):
+    return hasattr(method, 'evt_cls')
 
-    def get_process(self):
-        try:
-            return psutil.Process(self.pid)
-        except Exception:
-            return None
+
+# Singleton
+class EventHandler(object):
+    def __init__(self):
+        cls = type(self)
+        if hasattr(cls, 'has_instance'):
+            raise Exception('An event handler should have at most one '
+                            'instance')
+        cls.has_instance = True
+
+        cls.handlers = {}  # event class -> handler method
+        cls.events = Queue.Queue()
+
+        self._is_active = False
+        self._handler_thread = threading.Thread(target=self._event_loop)
+        self._handler_thread.daemon = True
+
+        class EventStop(Event):
+            pass
+
+        self._evt_stop = EventStop()
+
+        self.register_event_handlers()
+
+    def start(self):
+        self._is_active = True
+        self._handler_thread.start()
+
+    def stop(self):
+        self._is_active = False
+        cls = type(self)
+        cls.events.put(self._evt_stop)
+        self._handler_thread.join()
+
+    def register_event_handlers(self):
+        for _, method in inspect.getmembers(self, inspect.ismethod):
+            if _is_event_handler(method):
+                self.register_handler(method.evt_cls, method)
+
+    def register_handler(self, evt_cls, method):
+        """Registers the `evt_cls` -> `method` mapping in handler. Registers
+        this handler's event queue to `evt_cls`, so this type of events will
+        be dispatched to this handler.
+        """
+        cls = type(self)
+        cls.handlers.setdefault(evt_cls, set())
+        cls.handlers[evt_cls].add(method)
+        evt_cls.handler_event_queues.add(self.events)
+
+    def _event_loop(self):
+        cls = type(self)
+        while self._is_active:
+            try:
+                evt = cls.events.get()
+            except Exception as e:
+                logger.exception(e)
+                continue
+            if evt == self._evt_stop:
+                logger.debug('Got EventStop')
+                continue
+            evt_cls = type(evt)
+            # locate the handler method
+            handlers = cls.handlers.get(evt_cls)
+            if not handlers:
+                raise Exception('%s did not register event: %s' %
+                                (cls.__name__, evt_cls.__name__))
+            # invoke the handler method
+            for handler in handlers:
+                handler(evt)
+        print('event loop done')
+
+
+class EventMeta(type):
+    def __init__(self, name, bases, attrs):
+        self.handler_event_queues = set()
+        return super(EventMeta, self).__init__(name, bases, attrs)
+
+
+class Event(object):
+    __metaclass__ = EventMeta
+
+    def fire(self):
+        """Puts itself into all handlers' :attr:`events` (event queue). Each
+        :class:`EventHandler` instance should have its own running thread to
+        handle those events.
+        """
+        for event_queue in type(self).handler_event_queues:
+            event_queue.put(self)
+
+    @classmethod
+    def register_handler(cls, handler):
+        """When this event fires, this event enques itself into :attr:`events`
+        of :class:`EventHandler`.
+
+        Args:
+            handler_method: a method of an :class:`EventHandler` instance
+
+        Returns:
+            the original handler function
+
+        Exceptions:
+            TypeError: when the handler is not of type :class:`EventHandler`
+        """
+        handler.evt_cls = cls
+        return handler
 
 
 # -----------------
@@ -102,42 +204,3 @@ class EventUserDenyProcess(Event):
 
 class EventNotFound(Exception):
     pass
-
-
-class _Dispatcher(object):
-    def __init__(self, all_events):
-        self.event_handlers = {}
-        for e in all_events:
-            self.event_handlers[e.get_id()] = []
-
-    def dispatch(self, event):
-        self._assert_valid_event_cls(type(event))
-        for handler in self.event_handlers[event.get_id()]:
-            handler(event)
-
-    def register_event_handler(self, event_cls, handler):
-        self._assert_valid_event_cls(event_cls)
-        self._assert_valid_handler(handler)
-        self.event_handlers[event_cls.get_id()].append(handler)
-
-    def _assert_valid_event_cls(self, event_cls):
-        if not issubclass(event_cls, Event):
-            raise TypeError()
-        if event_cls.get_id() not in self.event_handlers.keys():
-            raise EventNotFound('"%s" is not a valid event' %
-                                event_cls.__name__)
-
-    @staticmethod
-    def _assert_valid_handler(handler):
-        if not callable(handler):
-            raise Exception('Handler "%s" is not callable' % handler.__name__)
-
-_dispatcher = _Dispatcher(Event.__subclasses__())
-
-
-def register_event_handler(event, handler):
-    _dispatcher.register_event_handler(event, handler)
-
-
-def dispatch(event):
-    _dispatcher.dispatch(event)

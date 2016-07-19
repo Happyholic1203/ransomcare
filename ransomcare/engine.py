@@ -31,7 +31,7 @@ def is_alive(pid):
         return False
 
 
-class Engine(object):
+class Engine(event.EventHandler):
     '''
     Detection logic: Only those PIDs who have done "listdir" operations will
     be **tracked**. When a **tracked** PID tries to close/unlink a file whose
@@ -62,11 +62,20 @@ class Engine(object):
             }
         }
         '''
+        super(Engine, self).__init__()
         self.pid_profiles = {}
         self._run_event = threading.Event()
         self._run_event.set()
         self.cleaner = threading.Thread(target=self.clean_loop)
         self.cleaner.daemon = True  # dies with the program
+
+    def start(self):
+        super(Engine, self).start()
+        self._start_cleaner()
+
+    def stop(self):
+        super(Engine, self).stop()
+        self._stop_cleaner()
 
     def clean_loop(self):
         '''
@@ -94,16 +103,17 @@ class Engine(object):
             time.sleep(period_seconds)
         logger.debug('Brain cleaner stopped')
 
-    def start_cleaner(self):
+    def _start_cleaner(self):
         logger.debug('Starting brain cleaner...')
         self.cleaner.start()
         return self.cleaner
 
-    def stop_cleaner(self):
+    def _stop_cleaner(self):
         logger.debug('Stopping brain.cleaner...')
         self._run_event.clear()
         self.cleaner.join()
 
+    @event.EventFileOpen.register_handler
     def on_file_open(self, evt):
         logger.debug('open: %d (%s) -> %s' % (
             evt.pid, evt.timestamp, evt.path))
@@ -136,6 +146,7 @@ class Engine(object):
                         }
                 break
 
+    @event.EventListDir.register_handler
     def on_list_dir(self, evt):
         logger.debug('listdir: %d (%s) -> %s' % (
             evt.pid, evt.timestamp, evt.path))
@@ -157,6 +168,7 @@ class Engine(object):
             }
         })
 
+    @event.EventFileRead.register_handler
     def on_file_read(self, evt):
         logger.debug('read: %d (%s) -> %s' % (
             evt.pid, evt.timestamp, evt.path))
@@ -168,6 +180,7 @@ class Engine(object):
         self.pid_profiles[evt.pid]['last_seen'] = evt.timestamp
         file_profile['read'] += evt.size
 
+    @event.EventFileWrite.register_handler
     def on_file_write(self, evt):
         logger.debug('write: %d (%s) -> %s' % (
             evt.pid, evt.timestamp, evt.path))
@@ -179,6 +192,7 @@ class Engine(object):
         self.pid_profiles[evt.pid]['last_seen'] = evt.timestamp
         file_profile['write'] += evt.size
 
+    @event.EventFileUnlink.register_handler
     def on_file_unlink(self, evt):
         logger.debug('unlink: %d (%s) -> %s' % (
             evt.pid, evt.timestamp, evt.path))
@@ -195,6 +209,7 @@ class Engine(object):
 
         profile['files'].pop(evt.path)
 
+    @event.EventFileClose.register_handler
     def on_file_close(self, evt):
         logger.debug('close: %d (%s) -> %s' % (
             evt.pid, evt.timestamp, evt.path))
@@ -212,11 +227,12 @@ class Engine(object):
 
         profile['files'].pop(evt.path)
 
+    @event.EventCryptoRansom.register_handler
     def on_crypto_ransom(self, pid, path):
         logger.debug('Crypto ransom event detected')
         logger.debug('PID profiles: \n%s' %
                      json.dumps(self.pid_profiles, indent=4))
-        event.dispatch(event.EventCryptoRansom(pid, path))
+        event.EventCryptoRansom(pid, path).fire()
 
     def _get_file_profile(self, pid, path):
         profile = self.pid_profiles.get(pid)

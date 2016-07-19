@@ -76,6 +76,7 @@ class DTraceSniffer(object):
         self.sniffer = None
         self.should_stop = False
         self.files = {}  # files[pid][fd] gives the filename
+        # TODO: add stop event
 
     def start(self):
         logger.debug('Starting dtrace... excluding self pid: %d' % os.getpid())
@@ -119,18 +120,17 @@ class DTraceSniffer(object):
             size = event_raw.get('size')
             timestamp = event_raw.get('t')
             if action == 'open':
-                event.dispatch(event.EventFileOpen(timestamp, pid, path))
+                event.EventFileOpen(timestamp, pid, path).fire()
             elif action == 'listdir':
-                event.dispatch(event.EventListDir(timestamp, pid, path))
+                event.EventListDir(timestamp, pid, path).fire()
             elif action == 'read':
-                event.dispatch(event.EventFileRead(timestamp, pid, path, size))
+                event.EventFileRead(timestamp, pid, path, size).fire()
             elif action == 'write':
-                event.dispatch(
-                    event.EventFileWrite(timestamp, pid, path, size))
+                event.EventFileWrite(timestamp, pid, path, size).fire()
             elif action == 'close':
-                event.dispatch(event.EventFileClose(timestamp, pid, path))
+                event.EventFileClose(timestamp, pid, path).fire()
             elif action == 'unlink':
-                event.dispatch(event.EventFileUnlink(timestamp, pid, path))
+                event.EventFileUnlink(timestamp, pid, path).fire()
         logger.debug('Sniffer stopped')
 
     def stop(self):

@@ -24,7 +24,8 @@ def flush_stdin():
             msvcrt.getch()
 
 
-class ConsoleUI(UI):
+class ConsoleUI(UI, event.EventHandler):
+    @event.EventAskUserAllowOrDeny.register_handler
     def on_ask_user_allow_or_deny(self, evt):
         try:
             exe = evt.process.exe()
@@ -45,6 +46,6 @@ class ConsoleUI(UI):
 
         allow = 'n' in yes_no.lower()
         if allow:
-            event.dispatch(event.EventUserAllowProcess(evt.process))
+            event.EventUserAllowProcess(evt.process).fire()
         else:
-            event.dispatch(event.EventUserDenyProcess(evt.process))
+            event.EventUserDenyProcess(evt.process).fire()

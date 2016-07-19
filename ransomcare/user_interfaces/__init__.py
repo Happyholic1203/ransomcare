@@ -8,6 +8,8 @@ import datetime
 
 import psutil
 
+from .. import event
+
 logger = logging.getLogger(__name__)
 
 
@@ -16,7 +18,7 @@ class UI(object):
         raise NotImplementedError()
 
 
-class WebUI(UI):
+class WebUI(UI, event.EventHandler):
     '''
     Can be used to expose internal states such as engine, sniffer states.
     '''
@@ -68,6 +70,7 @@ class WebUI(UI):
         self.ui_thread.start()
         return self.ui_thread
 
+    @event.EventCryptoRansom.register_handler
     def on_crypto_ransom(self, evt):
         cmdline, exe = None, None
         try:

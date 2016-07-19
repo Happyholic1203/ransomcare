@@ -67,39 +67,18 @@ def main(log_level=logging.DEBUG, log_stream=True, log_file=None):
                                   'please help porting it!' % system)
 
     white_list_handler = handlers.WhiteListHandler()  # handles ransom events
-    event.register_event_handler(
-        event.EventCryptoRansom, white_list_handler.on_crypto_ransom)
-    event.register_event_handler(
-        event.EventUserAllowProcess, white_list_handler.on_user_allow_process)
-    event.register_event_handler(
-        event.EventUserDenyProcess, white_list_handler.on_user_deny_process)
+    white_list_handler.start()
 
     # passes user responses -> handler
     console_ui = user_interfaces.ConsoleUI()
-    event.register_event_handler(
-        event.EventAskUserAllowOrDeny, console_ui.on_ask_user_allow_or_deny)
+    console_ui.start()
 
     brain = engine.Engine()  # generates user events -> UI
-    event.register_event_handler(
-        event.EventFileOpen, brain.on_file_open)
-    event.register_event_handler(
-        event.EventListDir, brain.on_list_dir)
-    event.register_event_handler(
-        event.EventFileRead, brain.on_file_read)
-    event.register_event_handler(
-        event.EventFileWrite, brain.on_file_write)
-    event.register_event_handler(
-        event.EventFileUnlink, brain.on_file_unlink)
-    event.register_event_handler(
-        event.EventFileClose, brain.on_file_close)
-
-    brain.start_cleaner()
+    brain.start()
 
     web_ui = user_interfaces.WebUI(
         engine=brain, sniffer=sniffer)
     web_ui.start()
-    event.register_event_handler(
-        event.EventCryptoRansom, web_ui.on_crypto_ransom)
 
     sniffer.start()  # main loop: generates file events -> brain
 
@@ -107,6 +86,8 @@ def main(log_level=logging.DEBUG, log_stream=True, log_file=None):
 
     sniffer.stop()
     web_ui.stop()
-    brain.stop_cleaner()
+    white_list_handler.stop()
+    console_ui.stop()
+    brain.stop()
 
     logger.debug('Everything cleaned up successfully, exiting...')
