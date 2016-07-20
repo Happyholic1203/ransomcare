@@ -1,0 +1,4 @@
+.*.swp
+*.pyc
+.ropeproject
+/db.sqlite
