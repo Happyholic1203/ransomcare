@@ -1,4 +1,5 @@
 Flask==0.11.1
+Flask-SocketIO==2.5
 Jinja2==2.8
 MarkupSafe==0.23
 SQLAlchemy==1.0.14
@@ -8,3 +9,6 @@ eventlet==0.19.0
 greenlet==0.4.10
 itsdangerous==0.24
 psutil==4.3.0
+python-engineio==0.9.2
+python-socketio==1.4.2
+six==1.10.0
