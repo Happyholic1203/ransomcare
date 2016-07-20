@@ -33,8 +33,7 @@ def is_alive(pid):
 
 
 class Engine(event.EventHandler):
-    '''
-    Detection logic: Only those PIDs who have done "listdir" operations will
+    """Detection logic: Only those PIDs who have done "listdir" operations will
     be **tracked**. When a **tracked** PID tries to close/unlink a file whose
     path has been listed before, the engine will check if the file has been
     fully read/written.
@@ -45,9 +44,8 @@ class Engine(event.EventHandler):
     Please keep in mind that when events arrive here, they **already**
     happened. So you might have a tracked file being read, while the file has
     already been deleted.
-    '''
-    def __init__(self):
-        '''
+
+    The engine keeps the following data structure::
         self.pid_profiles = {
             pid: {
                 "cmdline": "xxx -a -b",  # command line string
@@ -59,10 +57,13 @@ class Engine(event.EventHandler):
                         "write": 100  # bytes written
                     }
                 },
-                "last_seen": "2016 Jul 12 22:28:31"
+                "last_seen": "2016 Jul 12 22:28:31",
+                "read": 1382,  # bytes read from all victim files
+                "write": 1492  # bytes written since first victim file is read
             }
         }
-        '''
+    """
+    def __init__(self):
         super(Engine, self).__init__(privileged=True)
         self.pid_profiles = {}
         self._cleaner_thread = None
@@ -87,7 +88,7 @@ class Engine(event.EventHandler):
         logger.info('Cleaner started')
         fmt = '%Y %b %d %H:%M:%S'
         period_seconds = 2
-        obselete_seconds = 300
+        obselete_seconds = 10
         while not self._cleaner_stop:
             obselete_pids = []
             long_ago = datetime.now() - timedelta(seconds=obselete_seconds)
@@ -160,12 +161,18 @@ class Engine(event.EventHandler):
             return
 
         p = get_process(evt.pid)
+        try:
+            cmdline = p and p.cmdline()
+        except Exception:
+            cmdline = '(Process exited)'
         self.pid_profiles.update({
             evt.pid: {
-                'cmdline': p and p.cmdline(),
+                'cmdline': cmdline,
                 'listdirs': [evt.path],
                 'files': {},
-                'last_seen': evt.timestamp
+                'last_seen': evt.timestamp,
+                'read': 0,  # bytes read from all victim files
+                'write': 0  # bytes written since first victim file is read
             }
         })
 
@@ -178,13 +185,21 @@ class Engine(event.EventHandler):
         if not file_profile:
             return
 
-        self.pid_profiles[evt.pid]['last_seen'] = evt.timestamp
+        pid_profile = self.pid_profiles[evt.pid]
+        pid_profile['last_seen'] = evt.timestamp
+        pid_profile['read'] += evt.size
         file_profile['read'] += evt.size
 
     @event.EventFileWrite.register_handler
     def on_file_write(self, evt):
         logger.debug('write: %d (%s) -> %s' % (
             evt.pid, evt.timestamp, evt.path))
+
+        pid_profile = self.pid_profiles.get(evt.pid)
+        if pid_profile and pid_profile['files']:
+            # this suspicious process might have started writing encrypted
+            # files: record the total bytes it has written
+            pid_profile['write'] += evt.size
 
         file_profile = self._get_file_profile(evt.pid, evt.path)
         if not file_profile:
@@ -202,13 +217,15 @@ class Engine(event.EventHandler):
         if not file_profile:
             return
 
-        profile = self.pid_profiles[evt.pid]
-        profile['last_seen'] = evt.timestamp
-        if file_profile['read'] >= file_profile['size']:
+        pid_profile = self.pid_profiles[evt.pid]
+        pid_profile['last_seen'] = evt.timestamp
+        if file_profile['read'] >= file_profile['size'] and \
+                pid_profile['write'] >= (pid_profile['read'] / 2):
+            # TYPE_NEWFILE: Write encrypted data to a new file
             self.report_crypto_ransom(evt.pid, evt.path)
             return
 
-        profile['files'].pop(evt.path)
+        pid_profile['files'].pop(evt.path)
 
     @event.EventFileClose.register_handler
     def on_file_close(self, evt):
@@ -219,14 +236,17 @@ class Engine(event.EventHandler):
         if not file_profile:
             return
 
-        profile = self.pid_profiles[evt.pid]
-        profile['last_seen'] = evt.timestamp
-        if file_profile['read'] >= file_profile['size'] and \
-                file_profile['write'] >= file_profile['size']:
+        pid_profile = self.pid_profiles[evt.pid]
+        pid_profile['last_seen'] = evt.timestamp
+        if file_profile['read'] > 0 and \
+                file_profile['read'] >= file_profile['size'] and \
+                file_profile['write'] >= file_profile['size'] and \
+                pid_profile['write'] >= (pid_profile['read'] / 2):
+            # TYPE_OVERWRITE: Overwrite with encrypted data
             self.report_crypto_ransom(evt.pid, evt.path)
             return
 
-        profile['files'].pop(evt.path)
+        pid_profile['files'].pop(evt.path)
 
     def report_crypto_ransom(self, pid, path):
         logger.info('Crypto ransom event detected')
