@@ -2,11 +2,9 @@
 # -*- coding: utf-8 -*-
 
 import json
-import os
-import signal
 import logging
 
-from flask import request, Blueprint, Response
+from flask import Blueprint, Response
 
 from .. import ctx
 
@@ -16,13 +14,8 @@ api = Blueprint('api', __name__)
 
 @api.route('/shutdown')
 def _shutdown():
-    shutdown_func = request.environ.get('werkzeug.server.shutdown')
-    if shutdown_func is None:
-        raise RuntimeError('Not running with Werkzeug server')
-    logger.debug('Shuting down flask...')
-    shutdown_func()
     ctx['sniffer'].stop()  # shutdown main loop
-    logger.debug('Flask down')
+    logger.info('Flask down')
     return 'OK'
 
 
@@ -37,6 +30,7 @@ def engine():
 def ransom_events():
     body = json.dumps(ctx['events'])
     return Response(response=body, status=200, mimetype='application/json')
+
 
 @api.route('/sniffer')
 def sniffer():

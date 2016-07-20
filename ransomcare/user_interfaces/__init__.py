@@ -5,6 +5,8 @@ import logging
 import urllib2
 import threading
 import datetime
+import eventlet
+import eventlet.wsgi
 
 import psutil
 
@@ -23,6 +25,7 @@ class WebUI(UI, event.EventHandler):
     Can be used to expose internal states such as engine, sniffer states.
     '''
     def __init__(self, engine=None, sniffer=None, host='localhost', port=8888):
+        event.EventHandler.__init__(self)
         self.engine = engine
         self.sniffer = sniffer
         self.host = host
@@ -41,30 +44,23 @@ class WebUI(UI, event.EventHandler):
         self.web.init()
 
     def start(self):
-        return self._start_in_new_thread()
+        logger.info('Starting Web UI...')
+        event.EventHandler.start(self)
+        t = self._start_in_new_thread()
+        logger.info('Web UI started')
+        return t
 
     def stop(self):
-        logger.debug('Stopping Web UI...')
-        skt = {'host': self.host, 'port': self.port}
-        try:
-            url = 'http://{host}:{port}/api/shutdown'.format(**skt)
-            logger.debug('Stopping by HTTP GET: %s' % url)
-            r = urllib2.urlopen(url, timeout=5)
-            r.read()
-            r.close()
-        except IOError:
-            pass
-        except Exception as e:
-            logger.exception(e)
-        self.ui_thread.join()
+        logger.info('Stopping Web UI...')
+        self.server_thread.close()
+        logger.info('Web UI stopped')
 
     def start_app(self):
         try:
-            self.web.app.run(host=self.host, port=self.port)
+            self.server_thread = eventlet.listen((self.host, self.port))
+            eventlet.wsgi.server(self.server_thread, self.web.app)
         except Exception as e:
             logger.exception(e)
-        finally:
-            logger.debug('Web UI exited successfully')
 
     def _start_in_new_thread(self):
         self.ui_thread.start()
@@ -72,6 +68,7 @@ class WebUI(UI, event.EventHandler):
 
     @event.EventCryptoRansom.register_handler
     def on_crypto_ransom(self, evt):
+        logger.debug('Got crypto ransom event')
         cmdline, exe = None, None
         try:
             p = psutil.Process(evt.pid)
@@ -90,8 +87,13 @@ class WebUI(UI, event.EventHandler):
             'timestamp': datetime.datetime.now().isoformat()
         })
 
+    @event.EventAskUserAllowOrDeny.register_handler
     def on_ask_user_allow_or_deny(self, evt):
-        pass
+        # TODO: websocket
+        if any(['vvv' in arg for arg in evt.process.cmdline()]):
+            event.EventUserDenyProcess(evt.process).fire()
+        else:
+            event.EventUserAllowProcess(evt.process).fire()
 
 from .console import ConsoleUI
 from .darwin import DarwinAppUI

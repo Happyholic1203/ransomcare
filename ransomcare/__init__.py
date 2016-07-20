@@ -8,17 +8,16 @@ import logging
 logger = logging.getLogger(__name__)
 
 import platform
-import time
 
+from . import config
 from . import user_interfaces
 from . import handlers
 from . import sniffers
-from . import event
 from . import engine
 
 
 def _init_logging(level, log_stream=True, log_file=None):
-    logger.setLevel(level)
+    logger.setLevel(config.LOG_LEVEL)
     fmt = logging.Formatter('%(asctime)s %(name)s %(levelname)s: %(message)s')
 
     if log_stream:
@@ -69,25 +68,23 @@ def main(log_level=logging.DEBUG, log_stream=True, log_file=None):
     white_list_handler = handlers.WhiteListHandler()  # handles ransom events
     white_list_handler.start()
 
-    # passes user responses -> handler
-    console_ui = user_interfaces.ConsoleUI()
-    console_ui.start()
-
-    brain = engine.Engine()  # generates user events -> UI
+    # generates user events -> UI
+    brain = engine.Engine()
     brain.start()
 
+    # passes user responses -> handler
     web_ui = user_interfaces.WebUI(
         engine=brain, sniffer=sniffer)
     web_ui.start()
 
-    sniffer.start()  # main loop: generates file events -> brain
+    # main loop: generates file events -> brain
+    sniffer.start()
 
-    logger.debug('Cleaning up everything...')
+    logger.info('Cleaning up everything...')
 
     sniffer.stop()
     web_ui.stop()
     white_list_handler.stop()
-    console_ui.stop()
     brain.stop()
 
-    logger.debug('Everything cleaned up successfully, exiting...')
+    logger.info('Everything cleaned up successfully, exiting...')

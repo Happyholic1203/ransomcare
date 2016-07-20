@@ -11,6 +11,7 @@ import time
 import signal
 
 import psutil
+import eventlet
 
 from . import event
 
@@ -73,37 +74,50 @@ class DTraceSniffer(object):
     reponsible for translating them into absolute paths.
     '''
     def __init__(self):
-        self.sniffer = None
-        self.should_stop = False
+        self._sniffer = None
+        self._should_stop = False
         self.files = {}  # files[pid][fd] gives the filename
-        # TODO: add stop event
+        self._sniffer_reader = None  # eventlet greenthread
+        self._sniffer_output = eventlet.Queue()
 
-    def start(self):
-        logger.debug('Starting dtrace... excluding self pid: %d' % os.getpid())
-        DEVNULL = open(os.devnull, 'wb')
-        self.sniffer = subprocess.Popen(
-            ['./ransomcare/sniffer', '-x', str(os.getpid())],
-            stdout=subprocess.PIPE, stderr=DEVNULL, preexec_fn=os.setsid)
-        while not self.should_stop:
+    def read_sniffer(self):
+        logger.info('Sniffer started')
+        while True:
             try:
-                line = self.sniffer.stdout.readline()
+                line = self._sniffer.stdout.readline()
                 event_raw = json.loads(line)
+                self._sniffer_output.put(event_raw)
+                eventlet.sleep(0)  # yield control to engine
+            except ValueError:
+                if line != '\n' and line != "''":
+                    logger.warn('Failed to JSON-decode: "%r"' % line)
+                continue
             except IOError:
                 logger.debug('DTrace exited')
                 break
-            except ValueError:
-                if line != '\n':
-                    logger.warn('Failed to JSON-decode: "%r"' % line)
-                continue
+
+    def start(self):
+        logger.info('Starting sniffer...')
+        logger.debug('Starting dtrace... excluding self pid: %d' % os.getpid())
+        DEVNULL = open(os.devnull, 'wb')
+        self._sniffer = subprocess.Popen(
+            ['./ransomcare/sniffer', '-x', str(os.getpid())],
+            stdout=subprocess.PIPE, stderr=DEVNULL, preexec_fn=os.setsid)
+        self._sniffer_reader = eventlet.spawn(self.read_sniffer)
+        while not self._should_stop:
+            try:
+                event_raw = self._sniffer_output.get()
             except KeyboardInterrupt:
                 break
-            except Queue.Empty:
-                time.sleep(0.0001)
-                continue
+
             action = event_raw.get('action')
             pid = event_raw.get('pid')
             fd = event_raw.get('fd')
             path = event_raw.get('path')
+
+            if action == 'stop':
+                continue
+
             if action == 'open':
                 path = self.update_path(pid, fd, path)
                 if not path:
@@ -131,17 +145,16 @@ class DTraceSniffer(object):
                 event.EventFileClose(timestamp, pid, path).fire()
             elif action == 'unlink':
                 event.EventFileUnlink(timestamp, pid, path).fire()
-        logger.debug('Sniffer stopped')
+        self._sniffer.terminate()
+        self._should_stop = True
+        logger.info('Sniffer stopped')
 
     def stop(self):
-        if self.should_stop:
+        if self._should_stop:
             return
-        logger.debug('Stopping sniffer...')
-        self.should_stop = True
-        if self.sniffer.returncode is None:
-            pgid = os.getpgid(self.sniffer.pid)
-            logger.debug('Killing pgid: %d' % pgid)
-            os.killpg(pgid, signal.SIGTERM)
+        logger.info('Stopping sniffer...')
+        self._should_stop = True
+        self._sniffer_output.put({'action': 'stop'})
 
     def update_path(self, pid, fd, path):
         if not path:

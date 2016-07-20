@@ -31,7 +31,9 @@ class WhiteListHandler(Handler, event.EventHandler):
     @event.EventCryptoRansom.register_handler
     def on_crypto_ransom(self, evt):
         logger.debug('Whitelist: %s' % json.dumps(self.whitelist, indent=4))
-        logger.debug('Suspended: %s' % json.dumps(self.suspended, indent=4))
+        logger.debug('Suspended: %s' % json.dumps([
+            {'pid': p.pid, 'exe': p.exe()} for p in self.suspended
+        ], indent=4))
         if any(suspended.pid == evt.pid for suspended in self.suspended):
             return  # ignore captured ransom events
 
@@ -40,7 +42,7 @@ class WhiteListHandler(Handler, event.EventHandler):
             cmdline = p.cmdline()
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             logger.warn('Suspicious process %d exited before being caught'
-                            % evt.pid)
+                        % evt.pid)
             return
 
         if cmdline not in self.whitelist:
@@ -50,7 +52,7 @@ class WhiteListHandler(Handler, event.EventHandler):
         else:
             logger.info('Allowed white-listed process: %d' % evt.pid)
 
-    @event.EventAskUserAllowOrDeny.register_handler
+    @event.EventUserAllowProcess.register_handler
     def on_user_allow_process(self, evt):
         self.whitelist.append(evt.process.cmdline())
         for p in self.suspended:

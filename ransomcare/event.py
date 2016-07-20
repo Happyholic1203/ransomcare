@@ -1,12 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import logging
-import Queue
-import threading
-import inspect
+import eventlet
+eventlet.monkey_patch()
 
-import psutil
+import logging
+import inspect
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +16,10 @@ def _is_event_handler(method):
 
 # Singleton
 class EventHandler(object):
-    def __init__(self):
+    def __init__(self, privileged=False):
+
+        self._loop_period = 0.01 if privileged else 0.1
+
         cls = type(self)
         if hasattr(cls, 'has_instance'):
             raise Exception('An event handler should have at most one '
@@ -25,28 +27,26 @@ class EventHandler(object):
         cls.has_instance = True
 
         cls.handlers = {}  # event class -> handler method
-        cls.events = Queue.Queue()
+        cls.events = eventlet.Queue()
 
         self._is_active = False
-        self._handler_thread = threading.Thread(target=self._event_loop)
-        self._handler_thread.daemon = True
+        self._handler_thread = None
 
-        class EventStop(Event):
+        class _EventStop(Event):
             pass
 
-        self._evt_stop = EventStop()
+        self._evt_stop = _EventStop()
 
         self.register_event_handlers()
 
     def start(self):
         self._is_active = True
-        self._handler_thread.start()
+        self._handler_thread = eventlet.spawn(self._event_loop)
 
     def stop(self):
         self._is_active = False
         cls = type(self)
         cls.events.put(self._evt_stop)
-        self._handler_thread.join()
 
     def register_event_handlers(self):
         for _, method in inspect.getmembers(self, inspect.ismethod):
@@ -67,12 +67,14 @@ class EventHandler(object):
         cls = type(self)
         while self._is_active:
             try:
-                evt = cls.events.get()
+                evt = cls.events.get(block=False)
+            except eventlet.queue.Empty:
+                eventlet.sleep(self._loop_period)
+                continue
             except Exception as e:
                 logger.exception(e)
                 continue
             if evt == self._evt_stop:
-                logger.debug('Got EventStop')
                 continue
             evt_cls = type(evt)
             # locate the handler method
@@ -83,13 +85,12 @@ class EventHandler(object):
             # invoke the handler method
             for handler in handlers:
                 handler(evt)
-        print('event loop done')
 
 
 class EventMeta(type):
     def __init__(self, name, bases, attrs):
         self.handler_event_queues = set()
-        return super(EventMeta, self).__init__(name, bases, attrs)
+        super(EventMeta, self).__init__(name, bases, attrs)
 
 
 class Event(object):

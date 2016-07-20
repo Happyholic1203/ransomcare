@@ -3,11 +3,12 @@
 
 from __future__ import print_function
 
+import eventlet
+eventlet.monkey_patch()
+
 import os
 import logging
 import json
-import threading
-import time
 from datetime import datetime, timedelta
 
 import psutil
@@ -62,30 +63,32 @@ class Engine(event.EventHandler):
             }
         }
         '''
-        super(Engine, self).__init__()
+        super(Engine, self).__init__(privileged=True)
         self.pid_profiles = {}
-        self._run_event = threading.Event()
-        self._run_event.set()
-        self.cleaner = threading.Thread(target=self.clean_loop)
-        self.cleaner.daemon = True  # dies with the program
+        self._cleaner_thread = None
+        self._cleaner_stop = False
 
     def start(self):
+        logger.info('Starting engine...')
         super(Engine, self).start()
         self._start_cleaner()
+        logger.info('Engine started')
 
     def stop(self):
+        logger.info('Stopping engine...')
         super(Engine, self).stop()
         self._stop_cleaner()
+        logger.info('Engine stopped')
 
-    def clean_loop(self):
+    def _clean_loop(self):
         '''
         Cleans up garbage in brain so it will run faster.
         '''
-        logger.debug('Brain cleaner started')
+        logger.info('Cleaner started')
         fmt = '%Y %b %d %H:%M:%S'
-        period_seconds = 5
+        period_seconds = 2
         obselete_seconds = 300
-        while self._run_event.is_set():
+        while not self._cleaner_stop:
             obselete_pids = []
             long_ago = datetime.now() - timedelta(seconds=obselete_seconds)
             for pid, profile in self.pid_profiles.iteritems():
@@ -100,18 +103,16 @@ class Engine(event.EventHandler):
                         del self.pid_profiles[obselete_pid]
                     except KeyError:
                         pass
-            time.sleep(period_seconds)
-        logger.debug('Brain cleaner stopped')
+            eventlet.sleep(period_seconds)
+        logger.info('Cleaner stopped')
 
     def _start_cleaner(self):
-        logger.debug('Starting brain cleaner...')
-        self.cleaner.start()
-        return self.cleaner
+        logger.info('Starting cleaner...')
+        self._cleaner_thread = eventlet.spawn(self._clean_loop)
 
     def _stop_cleaner(self):
-        logger.debug('Stopping brain.cleaner...')
-        self._run_event.clear()
-        self.cleaner.join()
+        logger.info('Stopping cleaner...')
+        self._cleaner_stop = True
 
     @event.EventFileOpen.register_handler
     def on_file_open(self, evt):
@@ -204,7 +205,7 @@ class Engine(event.EventHandler):
         profile = self.pid_profiles[evt.pid]
         profile['last_seen'] = evt.timestamp
         if file_profile['read'] >= file_profile['size']:
-            self.on_crypto_ransom(evt.pid, evt.path)
+            self.report_crypto_ransom(evt.pid, evt.path)
             return
 
         profile['files'].pop(evt.path)
@@ -222,14 +223,13 @@ class Engine(event.EventHandler):
         profile['last_seen'] = evt.timestamp
         if file_profile['read'] >= file_profile['size'] and \
                 file_profile['write'] >= file_profile['size']:
-            self.on_crypto_ransom(evt.pid, evt.path)
+            self.report_crypto_ransom(evt.pid, evt.path)
             return
 
         profile['files'].pop(evt.path)
 
-    @event.EventCryptoRansom.register_handler
-    def on_crypto_ransom(self, pid, path):
-        logger.debug('Crypto ransom event detected')
+    def report_crypto_ransom(self, pid, path):
+        logger.info('Crypto ransom event detected')
         logger.debug('PID profiles: \n%s' %
                      json.dumps(self.pid_profiles, indent=4))
         event.EventCryptoRansom(pid, path).fire()
