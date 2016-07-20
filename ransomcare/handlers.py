@@ -54,11 +54,11 @@ class WhiteListHandler(Handler, event.EventHandler):
 
     @event.EventUserAllowProcess.register_handler
     def on_user_allow_process(self, evt):
-        self.whitelist.append(evt.process.cmdline())
+        self.whitelist.append(evt.pid)
         for p in self.suspended:
-            if p.pid == evt.process.pid:
+            if p.pid == evt.pid:
                 logger.info('Resuming PID %d (%s)' %
-                            (p.pid, evt.process.cmdline()))
+                            (p.pid, evt.cmdline))
                 p.resume()
                 self.suspended.remove(p)
                 return
@@ -66,13 +66,13 @@ class WhiteListHandler(Handler, event.EventHandler):
     @event.EventUserDenyProcess.register_handler
     def on_user_deny_process(self, evt):
         for p in self.suspended:
-            if p.pid == evt.process.pid:
+            if p.pid == evt.pid:
                 logger.info('Killing PID %d (%s)' %
-                            (p.pid, evt.process.cmdline()))
+                            (p.pid, evt.cmdline))
                 p.kill()
                 self.suspended.remove(p)
                 try:
-                    cmdline = evt.process.cmdline()
+                    cmdline = evt.cmdline
                 except psutil.AccessDenied:
                     return
                 if cmdline in self.whitelist:

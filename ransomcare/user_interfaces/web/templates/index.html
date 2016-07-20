@@ -1,0 +1,43 @@
+<script type="text/javascript" src="/static/js/socket.io.min.js"></script>
+<script type="text/javascript" charset="utf-8">
+  var socket = io.connect('http://' + document.domain + ':' + location.port);
+  socket.on('connect', function() {
+    socket.emit('connected', {data: 'Client connected'});
+  });
+
+  socket.on('connect_failed', function() {
+    alert('Failed to connect to server');
+    socket.disconnect();
+  });
+
+  socket.on('connect_error', function() {
+    alert('Lost connection to server');
+    socket.disconnect();
+  });
+
+  socket.on('debug', function(msg) {
+    alert(msg);
+  });
+
+  socket.on('flash', function(msg) {
+    alert(msg);
+  });
+
+  socket.on('prompt', function(data) {
+    answer = confirm(data.message);
+    socket.emit('prompt_answer', {
+      id: data.id,
+      answer: answer,
+      data: data.data
+    });
+  });
+
+  socket.on('event', function(evt) {
+    console.debug(evt);
+  });
+
+  socket.on('close', function() {
+    socket.disconnect();
+    alert('Disconnected');
+  });
+</script>

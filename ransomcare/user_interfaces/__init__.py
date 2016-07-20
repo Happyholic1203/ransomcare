@@ -7,6 +7,7 @@ import threading
 import datetime
 import eventlet
 import eventlet.wsgi
+import time
 
 import psutil
 
@@ -79,21 +80,28 @@ class WebUI(UI, event.EventHandler):
             if pid_profile is not None:
                 cmdline = pid_profile.get('cmdline')
                 exe = cmdline[0] if cmdline else None
-        self.web.ctx['events'].append({
+        crypto_ransom_event = {
             'pid': evt.pid,
             'path': evt.path,
             'cmdline': cmdline,
             'exe': exe,
             'timestamp': datetime.datetime.now().isoformat()
-        })
+        }
+        self.web.ctx['events'].append(crypto_ransom_event)
+        self.web.socketio.emit('event', crypto_ransom_event)
 
     @event.EventAskUserAllowOrDeny.register_handler
     def on_ask_user_allow_or_deny(self, evt):
-        # TODO: websocket
-        if any(['vvv' in arg for arg in evt.process.cmdline()]):
-            event.EventUserDenyProcess(evt.process).fire()
-        else:
-            event.EventUserAllowProcess(evt.process).fire()
+        self.web.socketio.emit('prompt', {
+            'id': 'KILL_OR_NOT',
+            'message': ('PID %d seems to be encrypting %s Kill it?' %
+                        (evt.process.pid, evt.path)),
+            'data': {
+                'pid': evt.process.pid,
+                'path': evt.path,
+                'cmdline': evt.process.cmdline()
+            }
+        })
 
 from .console import ConsoleUI
 from .darwin import DarwinAppUI

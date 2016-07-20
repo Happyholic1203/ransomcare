@@ -189,13 +189,15 @@ class EventAskUserAllowOrDeny(Event):
 
 
 class EventUserAllowProcess(Event):
-    def __init__(self, process):
-        self.process = process
+    def __init__(self, pid, cmdline):
+        self.pid = pid
+        self.cmdline = cmdline
 
 
 class EventUserDenyProcess(Event):
-    def __init__(self, process):
-        self.process = process
+    def __init__(self, pid, cmdline):
+        self.pid = pid
+        self.cmdline = cmdline
 
 
 # ----------------
