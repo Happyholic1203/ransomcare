@@ -6,25 +6,35 @@ Currently it supports only **MacOS**, but its design aims to provide cross-platf
 RansomCare is in its early stage, and everyone is welcome to extend it and port it to other platforms.
 
 # Running
-RansomCare
+To run ransomcare:
 ```bash
 git clone https://github.com/Happyholic1203/ransomcare
-cd ransomcare && sudo python run.py
+cd ransomcare
+pip install -r requirements  # (mkvirtualenv if you want)
+sudo python run.py  # run with `--debug` to see more information
 
 # in another shell
 open localhost:8888
 ```
 
-With `http://localhost:8888` open in your browser, you'll be notified when crypto ransom events occur.
+With `http://localhost:8888` open in your browser,
+you'll be notified when crypto ransom events occur,
+and you will be prompted if you want to kill the suspicious process (ransomware) or not.
 
-The suspicious process will be suspended when detected,
-and you can then choose to kill the process or allow it to continue.
+Please leave `http://localhost:8888` open,
+otherwise your suspended process(es) won't have a chance to resume or get killed.
 
 RansomCare doesn't have a UI yet, but you can inspect its status by:
 ```bash
 curl http://localhost:8888/api/processes  # suspicious processes
 curl http://localhost:8888/api/events  # detected crypto ransom events
 ```
+
+Please be noted that ransomcare is in its early stage,
+and **it may sometimes have some false alarms**,
+and it may suspend your normal apps.
+
+Please use with care.
 
 # How it Works
 RansomCare *sniffs* critical syscalls using [DTrace](http://dtrace.org/blogs/about/),
@@ -40,9 +50,9 @@ Crypto ransomwares must perform the following syscalls in order to perform encry
 4. `write`
 5. `close` or `unlink`: `close` to overwrite the original file, `unlink` to write encrypted content to new file
 
-# Tools that RansomCare Uses
+# Sniffing Tools that RansomCare Uses
 
-## [DTrace](http://dtrace.org/blogs/about/)
+## [DTrace](http://dtrace.org/blogs/about/) on MacOS
 RansomCare sniffs syscalls using [DTrace](http://dtrace.org/blogs/about/),
 a tool that is included by default in various operating systems,
 including Solaris, FreeBSD, and MacOS.
