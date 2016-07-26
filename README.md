@@ -50,6 +50,10 @@ Crypto ransomwares must perform the following syscalls in order to perform encry
 4. `write`
 5. `close` or `unlink`: `close` to overwrite the original file, `unlink` to write encrypted content to new file
 
+We monitor those syscalls to see if there's any process performing those syscalls in the above order.
+
+For more information, please refer to the [my slides in HITCON Community 2016](https://www.dropbox.com/s/60fn8ot8eylv4cv/HITCON2016%20-%20%E5%8B%92%E7%B4%A2%E8%BB%9F%E9%AB%94%E8%A1%8C%E7%82%BA%E5%81%B5%E6%B8%AC%20%28public%29.pdf?dl=0).
+
 # Sniffing Tools that RansomCare Uses
 
 ## [DTrace](http://dtrace.org/blogs/about/) on MacOS
